@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "જય વછરાજ જનરલ સ્ટોર - શુદ્ધ અને તાજું કરિયાણું, ઝાંઝમેર",
-  description: "ઝાંઝમેર ગામના દરેક પરિવાર માટે તાજું અને ઉત્તમ કરિયાણું",
+  title: "Jay Vachhraj General Store | Zanzmer",
+  description: "Fresh, quality groceries for every family in Zanzmer.",
 };
 
 export default function RootLayout({
@@ -12,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="gu" className="dark h-full">
+    <html lang="en" className="dark h-full">
       <head>
         <link
           rel="stylesheet"
