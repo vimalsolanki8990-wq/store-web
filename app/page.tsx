@@ -951,7 +951,7 @@ export default function CustomerStorePage() {
                     key={item.id}
                     className="bg-white border border-orange-100 rounded-2xl overflow-hidden flex flex-col hover:shadow-md hover:border-orange-200 transition-all duration-200 shadow-xs relative group"
                   >
-                    <div className="relative w-full aspect-[4/3] bg-slate-50 overflow-hidden">
+                    <div className="relative w-full aspect-[4/3] bg-slate-50 overflow-hidden rounded-t-2xl p-0 m-0">
                       <img
                         src={item.photoUrl}
                         alt={item.nameGu}
@@ -961,15 +961,15 @@ export default function CustomerStorePage() {
                         }`}
                       />
 
-                      {/* Animated 'SPECIAL OFFER' Corner Badge - Seamlessly fitted into top-left border */}
+                      {/* Animated 'SPECIAL OFFER' Corner Badge - Absolutely flush to top-left corner */}
                       {isAvailable && (item.offer || item.originalPrice > item.price) && (
-                        <div className="absolute top-0 left-0 z-10 offer-badge-pulse pointer-events-none origin-top-left">
-                          <div className="glint-effect relative inline-flex items-center gap-0.5 h-5 sm:h-5.5 px-2 rounded-br-xl bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-xs border-b border-r border-amber-300/40 select-none">
-                            <span className="sparkle-icon text-amber-200 text-[7px] leading-none">✦</span>
-                            <span className="font-black text-[7.5px] sm:text-[8px] tracking-wider uppercase drop-shadow-xs whitespace-nowrap">
+                        <div className="absolute top-0 left-0 z-10 m-0 offer-badge-pulse pointer-events-none origin-top-left">
+                          <div className="glint-effect relative inline-flex items-center justify-center gap-1 w-fit max-w-[100px] px-2.5 py-0.5 rounded-tl-2xl rounded-br-lg rounded-tr-none rounded-bl-none bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-xs border-b border-r border-amber-300/40 select-none">
+                            <span className="sparkle-icon text-amber-200 text-[8px] leading-none shrink-0">✦</span>
+                            <span className="font-bold text-[9px] md:text-[10px] tracking-wider uppercase drop-shadow-xs whitespace-nowrap">
                               SPECIAL OFFER
                             </span>
-                            <span className="sparkle-icon-delayed text-amber-200 text-[7px] leading-none">✦</span>
+                            <span className="sparkle-icon-delayed text-amber-200 text-[8px] leading-none shrink-0">✦</span>
                           </div>
                         </div>
                       )}
@@ -980,8 +980,8 @@ export default function CustomerStorePage() {
                         </span>
                       )}
 
-                      {/* Favorite Heart & WhatsApp Share Action Icons - Pushed to right edge with generous gap */}
-                      <div className="absolute top-2 right-2 flex items-center gap-1 z-20">
+                      {/* Favorite Heart & WhatsApp Share Action Icons - Securely anchored to top-right edge */}
+                      <div className="absolute top-2 right-2 flex gap-1.5 z-10">
                         <button
                           type="button"
                           onClick={() => toggleFavorite(item.id)}
