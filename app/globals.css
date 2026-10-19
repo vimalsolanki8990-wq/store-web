@@ -69,7 +69,7 @@ body {
     transform: scale(1);
   }
   50% {
-    transform: scale(1.04);
+    transform: scale(1.03);
   }
 }
 
@@ -95,6 +95,7 @@ body {
 }
 
 .offer-badge-pulse {
+  transform-origin: top left;
   animation: offerPulse 2.6s ease-in-out infinite;
 }
 

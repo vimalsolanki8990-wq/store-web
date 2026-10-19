@@ -961,10 +961,10 @@ export default function CustomerStorePage() {
                         }`}
                       />
 
-                      {/* Animated 'SPECIAL OFFER' Ribbon Badge - Compact, Angled & Corner-Anchored */}
+                      {/* Animated 'SPECIAL OFFER' Corner Badge - Seamlessly fitted into top-left border */}
                       {isAvailable && (item.offer || item.originalPrice > item.price) && (
                         <div className="absolute top-0 left-0 z-10 offer-badge-pulse pointer-events-none origin-top-left">
-                          <div className="glint-effect relative inline-flex items-center gap-0.5 h-5 sm:h-5.5 px-2 rounded-br-xl bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-xs border-b border-r border-amber-300/40 select-none origin-top-left -rotate-[1deg]">
+                          <div className="glint-effect relative inline-flex items-center gap-0.5 h-5 sm:h-5.5 px-2 rounded-br-xl bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-xs border-b border-r border-amber-300/40 select-none">
                             <span className="sparkle-icon text-amber-200 text-[7px] leading-none">✦</span>
                             <span className="font-black text-[7.5px] sm:text-[8px] tracking-wider uppercase drop-shadow-xs whitespace-nowrap">
                               SPECIAL OFFER
