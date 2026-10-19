@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useDeferredValue } from "react";
 import { db } from "./firebase";
 import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import { toPng } from "html-to-image";
-import { Camera, Check, CheckCircle2, ExternalLink, FolderOpen, Heart, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShoppingBag, Sparkles, Store, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
+import { Camera, Check, CheckCircle2, ExternalLink, FolderOpen, Heart, Home, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, StoreCategory, StoreSettings } from "./store-config";
 
 interface Product {
@@ -208,7 +208,7 @@ export default function CustomerStorePage() {
     Object.entries(vars).forEach(([name, value]) => root.style.setProperty(name, value));
     root.classList.toggle("dark", storeSettings.appearance === "dark");
     return () => {
-      root.classList.add("dark");
+      root.classList.remove("dark");
     };
   }, [storeSettings]);
 
@@ -504,79 +504,138 @@ export default function CustomerStorePage() {
   const activeSliderIndex = activeBanners.length ? sliderIndex % activeBanners.length : 0;
 
   return (
-    <div data-motion={storeSettings.animationTheme} data-theme={storeSettings.theme} data-card-style={storeSettings.cardStyle} className={`storefront storefront-neumorphic theme-${storeSettings.theme} motion-${storeSettings.animationTheme} ${storeSettings.appearance === "light" ? "storefront-light" : ""} min-h-screen font-sans flex flex-col antialiased`} style={storeThemeCssVars(storeSettings) as React.CSSProperties}>
+    <div className="bg-[#f8fafc] text-slate-800 min-h-screen font-sans flex flex-col antialiased">
       {toastMsg && (
-        <div className="fixed top-16 right-4 z-50 bg-[#0f172a] text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2 text-xs border border-orange-500">
+        <div className="fixed top-16 right-4 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs border border-orange-500">
           <Check className="text-emerald-400" size={16} />
           <span>{toastMsg}</span>
         </div>
       )}
 
-      {/* Notice */}
+      {/* 1. Top Ticker Banner: Light warm orange announcement bar with soft delivery icon */}
       {storeSettings.noticeEnabled && (
-      <div className="sticky top-0 z-40 py-2 px-3 text-xs font-semibold text-white shadow-md" style={{ background: `linear-gradient(90deg, ${storeSettings.primaryColor}, ${storeSettings.secondaryColor})` }}>
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Megaphone className="notice-megaphone text-amber-100" size={17} aria-hidden="true" />
-            <span className="truncate font-medium">
-              {storeSettings.noticeText}
+        <div className="sticky top-0 z-40 bg-amber-50/95 backdrop-blur-xs border-b border-amber-200/80 py-2 px-3 text-xs font-semibold text-amber-950 shadow-2xs">
+          <div className="max-w-6xl mx-auto flex items-center justify-center gap-2 text-center">
+            <Truck className="text-amber-700 shrink-0" size={15} aria-hidden="true" />
+            <span className="truncate">
+              {storeSettings.noticeText || "Fresh seasonal spices and pure groundnut oil now available!"}
             </span>
           </div>
         </div>
-      </div>
       )}
-      {/* Header */}
-      <header className={`glass-surface sticky ${storeSettings.noticeEnabled ? "top-8" : "top-0"} z-30 border-b border-white/20`}>
-        <div className="max-w-6xl mx-auto px-4 py-2.5">
+
+      {/* 2. Store Header: Name, Subtitle, and Open Status Capsule in Green Badge */}
+      <header className={`sticky ${storeSettings.noticeEnabled ? "top-8" : "top-0"} z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs`}>
+        <div className="max-w-6xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-14 h-14 shrink-0 rounded-2xl flex items-center justify-center text-white shadow-lg overflow-hidden" style={{ background: storeSettings.logoMode === "icon" ? storeSettings.accentColor : "transparent" }}>
-                {storeSettings.logoMode === "image" && storeSettings.logoUrl ? <img src={storeSettings.logoUrl} alt="Store logo" className="h-full w-full object-cover" /> : <StoreLogoIcon size={27} aria-hidden="true" />}
+              <div className="w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center text-white shadow-xs overflow-hidden bg-gradient-to-tr from-orange-600 to-amber-500">
+                {storeSettings.logoMode === "image" && storeSettings.logoUrl ? (
+                  <img src={storeSettings.logoUrl} alt="Store logo" className="h-full w-full object-cover" />
+                ) : (
+                  <StoreLogoIcon size={24} aria-hidden="true" />
+                )}
               </div>
               <div>
-                <h1 className="text-lg sm:text-2xl font-black leading-tight tracking-tight text-[color:var(--store-foreground)]">
-                  {storeSettings.storeName}
+                <h1 className="text-lg sm:text-2xl font-black leading-tight tracking-tight text-slate-900">
+                  {storeSettings.storeName || "Jay Vachhraj General Store"}
                 </h1>
-                <p className="text-xs text-amber-400 font-bold">
+                <p className="text-xs text-orange-600 font-semibold mt-0.5">
                   Zanzmer • Fresh, quality groceries
                 </p>
               </div>
             </div>
-            <span className={`hidden shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold sm:inline-flex ${storeIsOpen ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>
-              <span className={`status-dot h-2 w-2 rounded-full ${storeIsOpen ? "bg-emerald-400" : "bg-rose-400"}`} />{storeIsOpen ? "Open" : "Closed"}
+            <span className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+              storeIsOpen ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
+            }`}>
+              <span className={`h-2 w-2 rounded-full ${storeIsOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
+              {storeIsOpen ? "Open" : "Closed"} {storeSettings.openingTime || "06:00"} - {storeSettings.closingTime || "21:00"}
             </span>
           </div>
 
-          <div className="mt-2.5 relative flex items-center">
+          {/* 3. Clean Search Bar: Pill-shaped white input with mic icon on left and magnifying glass on right */}
+          <div className="mt-3 relative flex items-center">
+            {speechSupported ? (
+              <button
+                type="button"
+                onClick={startVoiceSearch}
+                aria-label="Search by voice"
+                aria-pressed={isListening}
+                className={`absolute left-3.5 z-10 p-1 rounded-full transition ${
+                  isListening ? "text-rose-500 animate-pulse bg-rose-50" : "text-slate-400 hover:text-orange-600"
+                }`}
+              >
+                <Mic size={18} />
+              </button>
+            ) : (
+              <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                <Mic size={18} />
+              </div>
+            )}
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search products in Gujarati, Hindi or English…"
-              className="neumorphic-input w-full rounded-xl border border-[#1f2e4d] bg-[#0c1322] py-2.5 pl-9 pr-24 text-xs text-white placeholder-slate-400 focus:outline-none"
+              placeholder="Search products in Gujarati, Hindi or English..."
+              className="w-full rounded-full border border-slate-200 bg-white py-2.5 sm:py-3 pl-11 pr-11 text-xs sm:text-sm text-slate-900 placeholder-slate-400 shadow-2xs focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
             />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} aria-hidden="true" />
-            <div className="absolute right-1.5 flex items-center gap-1">
-              {speechSupported && <button type="button" onClick={startVoiceSearch} aria-label="Search by voice" aria-pressed={isListening} className={`rounded-lg p-1.5 ${isListening ? "bg-rose-500 text-white animate-pulse" : "text-slate-300 hover:bg-white/10"}`}><Mic size={16} /></button>}
-              <button type="button" onClick={() => setShowFilters((visible) => !visible)} aria-expanded={showFilters} aria-label="Show product filters" className="rounded-lg p-1.5 text-slate-300 hover:bg-white/10"><SlidersHorizontal size={16} /></button>
+            <div className="absolute right-3.5 pointer-events-none text-slate-400">
+              <Search size={18} />
             </div>
           </div>
-          <div className="mt-1 flex items-center justify-between gap-2 sm:hidden"><span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${storeIsOpen ? "text-emerald-300" : "text-rose-300"}`}><span className={`status-dot h-1.5 w-1.5 rounded-full ${storeIsOpen ? "bg-emerald-400" : "bg-rose-400"}`} />{storeIsOpen ? "Open" : "Closed"}</span><span className="text-[10px] text-slate-500">{storeSettings.openingTime}–{storeSettings.closingTime}</span></div>
-          {speechError && <p role="status" className="mt-1 text-[10px] text-rose-300">{speechError}</p>}
-          {showFilters && <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {speechSupported && <select aria-label="Voice search language" value={speechLanguage} onChange={(event) => setSpeechLanguage(event.target.value)} className="rounded-lg border border-[#1f2e4d] bg-[#0c1322] px-2 py-2 text-xs text-white"><option value="gu-IN">ગુજરાતી</option><option value="hi-IN">हिन्दी</option><option value="en-IN">English</option></select>}
-            <select aria-label="Filter by brand" value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)} className="rounded-lg border border-[#1f2e4d] bg-[#0c1322] px-2 py-2 text-xs text-white"><option value="all">All brands</option>{brands.map((brand) => <option key={brand} value={brand}>{brand}</option>)}</select>
-            <select aria-label="Sort by price" value={sortPrice} onChange={(event) => setSortPrice(event.target.value)} className="rounded-lg border border-[#1f2e4d] bg-[#0c1322] px-2 py-2 text-xs text-white"><option value="featured">Featured order</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option></select>
-            <button type="button" onClick={() => setSaleOnly((value) => !value)} aria-pressed={saleOnly} className={`inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-bold ${saleOnly ? "border-amber-400 bg-amber-400/15 text-amber-200" : "border-[#1f2e4d] bg-[#0c1322] text-slate-300"}`}>Offers / sale {saleOnly && <Check size={13} />}</button>
-            <button type="button" onClick={() => setFavoritesOnly((value) => !value)} aria-pressed={favoritesOnly} className={`inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-bold ${favoritesOnly ? "border-rose-400 bg-rose-400/15 text-rose-200" : "border-[#1f2e4d] bg-[#0c1322] text-slate-300"}`}><Heart size={14} /> Favorites</button>
-          </div>}
+          {speechError && <p role="status" className="mt-1 text-[11px] text-rose-600 text-center">{speechError}</p>}
+
+          {/* Quick Filters Pill Bar */}
+          <div className="mt-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar text-xs">
+            <button
+              type="button"
+              onClick={() => setSaleOnly((v) => !v)}
+              aria-pressed={saleOnly}
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border transition shrink-0 ${
+                saleOnly ? "border-orange-500 bg-orange-50 text-orange-700 shadow-2xs" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              Special Offers {saleOnly && <Check size={12} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFavoritesOnly((v) => !v)}
+              aria-pressed={favoritesOnly}
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border transition shrink-0 ${
+                favoritesOnly ? "border-rose-500 bg-rose-50 text-rose-700 shadow-2xs" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Heart size={12} fill={favoritesOnly ? "currentColor" : "none"} /> Favorites
+            </button>
+            {brands.length > 0 && (
+              <select
+                aria-label="Filter by brand"
+                value={brandFilter}
+                onChange={(e) => setBrandFilter(e.target.value)}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0"
+              >
+                <option value="all">All Brands</option>
+                {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            )}
+            <select
+              aria-label="Sort by price"
+              value={sortPrice}
+              onChange={(e) => setSortPrice(e.target.value)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0"
+            >
+              <option value="featured">Featured Order</option>
+              <option value="low">Price: Low to High</option>
+              <option value="high">Price: High to Low</option>
+            </select>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-4 w-full flex-1">
-        {/* Slider */}
+      <main className="max-w-6xl mx-auto px-4 py-4 w-full flex-1 pb-28">
+        {/* Active Promotional Banners Slider */}
         {activeBanners.length > 0 && (
-          <div className="store-card mb-5 relative rounded-2xl overflow-hidden">
+          <div className="mb-5 relative rounded-2xl overflow-hidden shadow-xs border border-slate-200/80 bg-white">
             <div className="relative w-full aspect-[16/9] sm:aspect-[21/8] min-h-56 sm:min-h-72 max-h-[34rem] overflow-hidden">
               {activeBanners.map((b, idx) => (
                 <div
@@ -590,7 +649,7 @@ export default function CustomerStorePage() {
                     alt={b.title}
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 p-5 sm:p-10 flex flex-col justify-end bg-gradient-to-t from-black/55 via-black/10 to-transparent">
+                  <div className="absolute inset-0 p-5 sm:p-10 flex flex-col justify-end bg-gradient-to-t from-black/60 via-black/15 to-transparent">
                     <span className="inline-block px-2.5 py-0.5 rounded-full bg-orange-500 text-white font-bold text-[10px] w-fit mb-1 shadow">
                       {b.tag}
                     </span>
@@ -611,254 +670,607 @@ export default function CustomerStorePage() {
                   key={idx}
                   onClick={() => setSliderIndex(idx)}
                   className={`h-2 rounded-full transition-all ${
-                    idx === activeSliderIndex ? "w-5 bg-orange-500" : "w-2 bg-white/50"
+                    idx === activeSliderIndex ? "w-5 bg-orange-500" : "w-2 bg-white/70"
                   }`}
                 />
               ))}
             </div>
           </div>
         )}
-        {bannersLoading && <div role="status" aria-label="Loading promotions" className="mb-5 overflow-hidden rounded-2xl border border-slate-800"><div className="skeleton-shimmer h-56 sm:h-72" /></div>}
+        {bannersLoading && (
+          <div role="status" aria-label="Loading promotions" className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="skeleton-shimmer h-56 sm:h-72" />
+          </div>
+        )}
 
-        {/* Categories */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
-              <FolderOpen size={14} /> Shop by category
+        {/* 4. Circular Category Strip: Story-style circles with subtle borders and labels */}
+        <div id="categories-section" className="mb-6">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <FolderOpen size={15} className="text-orange-500" /> Categories
             </span>
-            <span className="text-[11px] text-slate-400">
+            <span className="text-xs text-slate-500 font-semibold">
               {filteredProducts.length} items
             </span>
           </div>
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none text-xs">
+          <div className="flex items-start gap-4 sm:gap-6 overflow-x-auto pb-2 pt-1 no-scrollbar scroll-smooth">
             {allCategories.map((cat) => {
               const isSel = activeCategory === cat.id;
               const CategoryIcon = CATEGORY_ICONS[cat.icon] ?? Sparkles;
               return (
                 <button
                   key={cat.id}
-                  onClick={() => setActiveCategory(cat.id)}
-                  className={`interactive-lift flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold whitespace-nowrap select-none transition-colors duration-200 ease-out active:scale-[0.95] ${
-                    isSel
-                      ? "border-transparent text-white shadow-md"
-                      : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white hover:shadow-sm"
-                  }`}
-                  style={{
-                    transform: "translateZ(0)",
-                    transition: "transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease-out, background-color 0.2s ease-out, color 0.2s ease-out, box-shadow 0.2s ease-out",
-                    ...(isSel ? { backgroundColor: storeSettings.primaryColor, borderColor: storeSettings.primaryColor } : {}),
+                  type="button"
+                  onClick={() => {
+                    setActiveCategory(cat.id);
+                    setFavoritesOnly(false);
                   }}
+                  className="flex flex-col items-center gap-1.5 shrink-0 group focus:outline-none"
                 >
-                  <CategoryIcon size={14} aria-hidden="true" />
-                  <span>{cat.name}</span>
+                  <div
+                    className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 select-none ${
+                      isSel
+                        ? "bg-orange-500 text-white ring-3 ring-orange-500 ring-offset-2 ring-offset-[#f8fafc] shadow-md scale-105"
+                        : "bg-white text-slate-700 border-2 border-slate-200 hover:border-orange-300 hover:bg-orange-50/40 shadow-2xs group-hover:scale-102"
+                    }`}
+                  >
+                    <CategoryIcon size={24} aria-hidden="true" />
+                  </div>
+                  <span
+                    className={`text-[11px] sm:text-xs font-semibold text-center whitespace-nowrap transition-colors max-w-[80px] truncate ${
+                      isSel ? "text-orange-600 font-bold" : "text-slate-700 group-hover:text-slate-900"
+                    }`}
+                  >
+                    {cat.name}
+                  </span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {lastOrderAvailable && <div className="mb-5 flex justify-end"><button onClick={repeatLastOrder} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-200">Repeat last order</button></div>}
+        {/* 5. Deal of the Day Banner: Soft rounded card with 10% Offer badge */}
+        <section className="mb-6 rounded-3xl overflow-hidden border border-amber-200/80 bg-gradient-to-br from-amber-50 via-orange-50/60 to-amber-100/70 p-5 sm:p-7 shadow-xs relative">
+          <div className="relative z-10 max-w-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500 text-white text-[11px] font-black uppercase tracking-wider shadow-2xs">
+                <Sparkles size={12} /> 10% Offer
+              </span>
+              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
+                Deal of the Day
+              </span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+              100% Pure Groundnut Oil & Seasonal Spices
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
+              Freshly pressed pure groundnut oil and seasonal spices direct from Zanzmer farmers at wholesale quality rates.
+            </p>
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory("તેલ-ઘી");
+                  setFavoritesOnly(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-xs font-bold shadow-xs transition"
+              >
+                Shop Pure Oil
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveCategory("મસાલા");
+                  setFavoritesOnly(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold shadow-2xs transition"
+              >
+                View Seasonal Spices
+              </button>
+            </div>
+          </div>
+          <div className="absolute -right-6 -bottom-6 w-44 h-44 sm:w-60 sm:h-60 bg-gradient-to-tr from-amber-300/40 to-orange-400/20 rounded-full blur-2xl pointer-events-none" />
+        </section>
 
-        {isInstallPromptVisible && <aside className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3"><div><span className="block text-sm font-bold text-emerald-100">Install Jay Vachhraj Store App</span><span className="mt-0.5 block text-xs text-emerald-200/80">Fast, lightweight shopping app on your device</span></div><div className="flex items-center gap-2"><button onClick={installApp} className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950">Install App</button><button onClick={() => setInstallPromptVisible(false)} aria-label="Dismiss app install prompt" className="rounded-lg p-2 text-emerald-100"><X size={16} /></button></div></aside>}
+        {lastOrderAvailable && (
+          <div className="mb-5 flex justify-end">
+            <button
+              onClick={repeatLastOrder}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
+            >
+              Repeat last order
+            </button>
+          </div>
+        )}
 
-        {/* Product Cards */}
+        {isInstallPromptVisible && (
+          <aside className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+            <div>
+              <span className="block text-sm font-bold text-emerald-900">Install Jay Vachhraj Store App</span>
+              <span className="mt-0.5 block text-xs text-emerald-700">Fast, lightweight shopping app on your device</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={installApp} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700">Install App</button>
+              <button onClick={() => setInstallPromptVisible(false)} aria-label="Dismiss app install prompt" className="rounded-lg p-2 text-emerald-700 hover:text-emerald-900"><X size={16} /></button>
+            </div>
+          </aside>
+        )}
+
+        {/* 6. Clean Product Cards (2-column on mobile, 4-column on desktop) */}
         {loading ? (
-          <div role="status" aria-label="Loading products" className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 sm:gap-4">{Array.from({ length: 8 }, (_, index) => <div key={index} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-800/70"><div className="skeleton-shimmer aspect-[4/3]" /><div className="space-y-3 p-3"><div className="skeleton-shimmer h-4 w-3/4 rounded" /><div className="skeleton-shimmer h-4 w-1/3 rounded" /><div className="skeleton-shimmer h-9 w-full rounded-xl" /></div></div>)}</div>
+          <div role="status" aria-label="Loading products" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+            {Array.from({ length: 8 }, (_, index) => (
+              <div key={index} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="skeleton-shimmer aspect-[4/3]" />
+                <div className="space-y-3 p-3">
+                  <div className="skeleton-shimmer h-4 w-3/4 rounded" />
+                  <div className="skeleton-shimmer h-4 w-1/3 rounded" />
+                  <div className="skeleton-shimmer h-9 w-full rounded-xl" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
-          filteredProducts.length ? <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
-            {filteredProducts.map((item) => {
-              const isAvailable = item.inStock && item.stockCount > 0;
-              const isFavorite = favorites.includes(item.id);
-              return (
-                <div
-                  key={item.id}
-                    className="store-card neumorphic-card interactive-lift rounded-2xl overflow-hidden flex flex-col justify-between relative group"
-                >
-                  <div className="relative w-full aspect-[4/3] bg-[#070b14] overflow-hidden">
-                    <img
-                      src={item.photoUrl}
-                      alt={item.nameGu}
-                      className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
-                        !item.inStock ? "grayscale opacity-50" : ""
-                      }`}
-                    />
+          filteredProducts.length ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+              {filteredProducts.map((item) => {
+                const isAvailable = item.inStock && item.stockCount > 0;
+                const isFavorite = favorites.includes(item.id);
+                const inCartQty = cart[item.id]?.quantity ?? 0;
+                const unitChip = item.units && item.units.length > 0 ? item.units[0] : "1 kg";
+
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden flex flex-col justify-between hover:shadow-md hover:border-slate-300 transition-all duration-200 shadow-xs relative group"
+                  >
+                    <div className="relative w-full aspect-[4/3] bg-slate-50 overflow-hidden">
+                      <img
+                        src={item.photoUrl}
+                        alt={item.nameGu}
+                        loading="lazy"
+                        className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+                          !isAvailable ? "grayscale opacity-50" : ""
+                        }`}
+                      />
+
                       {!isAvailable && (
-                      <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow">
-                        Out of stock
-                      </span>
-                    )}
-                      {(item.offer || item.originalPrice > item.price) && (
-                        <span className="special-offer-badge" aria-label="Special offer">
-                          <span>SPECIAL OFFER</span>
+                        <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow z-10">
+                          Out of stock
                         </span>
                       )}
-                      <div className="absolute right-2 top-2 flex gap-1"><button onClick={() => toggleFavorite(item.id)} aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"} aria-pressed={isFavorite} className={`rounded-full bg-slate-950/80 p-2 ${isFavorite ? "text-rose-400" : "text-white"}`}><Heart size={16} fill={isFavorite ? "currentColor" : "none"} /></button><button onClick={() => shareProduct(item)} aria-label="Share product on WhatsApp" className="rounded-full bg-[#25D366] p-2 text-white"><Share2 size={15} /></button></div>
-                  </div>
 
-                  <div className="p-3 flex-1 flex flex-col justify-between gap-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <h4 className="font-bold text-[color:var(--store-foreground)] text-xs sm:text-sm line-clamp-2">
-                        {item.nameEn?.trim() || item.nameGu}
-                      </h4>
-                      <span className="font-jakarta shrink-0 font-bold text-xs sm:text-sm" style={{ color: storeSettings.accentColor }}>₹{item.price}{item.originalPrice > item.price && <del className="ml-1 text-[10px] text-slate-500">₹{item.originalPrice}</del>}</span>
+                      {/* Favorite Heart & WhatsApp Share Action Icons */}
+                      <div className="absolute right-2 top-2 flex gap-1 z-10">
+                        <button
+                          onClick={() => toggleFavorite(item.id)}
+                          aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                          aria-pressed={isFavorite}
+                          className={`rounded-full bg-white/95 backdrop-blur-xs p-1.5 shadow-xs border border-slate-200/80 hover:bg-white transition ${
+                            isFavorite ? "text-rose-500" : "text-slate-400 hover:text-rose-500"
+                          }`}
+                        >
+                          <Heart size={15} fill={isFavorite ? "currentColor" : "none"} />
+                        </button>
+                        <button
+                          onClick={() => shareProduct(item)}
+                          aria-label="Share product on WhatsApp"
+                          className="rounded-full bg-white/95 backdrop-blur-xs p-1.5 shadow-xs border border-slate-200/80 hover:bg-white text-[#25D366] transition"
+                        >
+                          <Share2 size={15} />
+                        </button>
+                      </div>
                     </div>
 
-                    <button
-                      onClick={() => addToCart(item)}
-                      disabled={!isAvailable}
-                      className={`neumorphic-button interactive-lift w-full py-2 px-3 rounded-xl font-bold text-xs transition active:scale-95 ${bouncedProductId === item.id ? "cart-add-bounce" : ""} ${
-                        isAvailable
-                          ? "text-white shadow-md"
-                          : "bg-[#0c1322] text-slate-500 cursor-not-allowed border border-[#1f2e4d]"
-                      }`}
-                      style={isAvailable ? { backgroundColor: storeSettings.primaryColor } : undefined}
-                    >
-                      {isAvailable ? "+ Add to List" : "Out of stock"}
-                    </button>
+                    <div className="p-3 flex-1 flex flex-col justify-between gap-3">
+                      <div>
+                        {/* Single Item Title - No redundant category subtitle */}
+                        <h3 className="font-bold text-slate-900 text-xs sm:text-sm line-clamp-2 leading-snug">
+                          {item.nameEn?.trim() || item.nameGu}
+                        </h3>
+
+                        {/* Price display: Bold main price, crossed original price, ONE unit chip, Special Offer tag */}
+                        <div className="mt-2 flex items-baseline flex-wrap gap-1.5">
+                          <span className="font-extrabold text-orange-600 text-sm sm:text-base">
+                            ₹{item.price}
+                          </span>
+                          {item.originalPrice > item.price && (
+                            <del className="text-[11px] text-slate-400 font-normal line-through">
+                              ₹{item.originalPrice}
+                            </del>
+                          )}
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/70">
+                            {unitChip}
+                          </span>
+                          {(item.offer || item.originalPrice > item.price) && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
+                              Special Offer
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Smooth Counter State (- 1 +) or Solid Orange + Add to List Button */}
+                      {inCartQty > 0 ? (
+                        <div className="flex items-center justify-between w-full rounded-xl bg-orange-50 border border-orange-200 p-1">
+                          <button
+                            type="button"
+                            onClick={() => updateQty(item.id, -1)}
+                            aria-label="Decrease quantity"
+                            className="w-8 h-8 rounded-lg bg-white text-orange-600 font-bold flex items-center justify-center hover:bg-orange-100 active:scale-95 transition shadow-2xs border border-orange-200"
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <span className="font-extrabold text-xs text-orange-950 px-2">
+                            {inCartQty} in cart
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateQty(item.id, 1)}
+                            aria-label="Increase quantity"
+                            className="w-8 h-8 rounded-lg bg-orange-500 text-white font-bold flex items-center justify-center hover:bg-orange-600 active:scale-95 transition shadow-2xs"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => addToCart(item)}
+                          disabled={!isAvailable}
+                          className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs transition duration-150 active:scale-95 flex items-center justify-center gap-1 shadow-xs ${
+                            bouncedProductId === item.id ? "cart-add-bounce" : ""
+                          } ${
+                            isAvailable
+                              ? "bg-orange-500 hover:bg-orange-600 text-white active:bg-orange-700 shadow-sm"
+                              : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                          }`}
+                        >
+                          {isAvailable ? "+ Add to List" : "Out of stock"}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div> : <div className="rounded-2xl border border-dashed border-slate-700 p-10 text-center text-sm text-slate-400">No matching products. Try another search or filter.</div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+              No matching products. Try another search or filter.
+            </div>
+          )
         )}
       </main>
 
-      <footer className="glass-surface border-t border-white/20 text-slate-300">
+      {/* Footer - Clean Light */}
+      <footer className="bg-white border-t border-slate-200 text-slate-600">
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-4 py-10 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
           <section>
             <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl text-white" style={{ backgroundColor: storeSettings.accentColor }}>
-                {storeSettings.logoMode === "image" && storeSettings.logoUrl ? <img src={storeSettings.logoUrl} alt="" className="h-full w-full rounded-2xl object-cover" /> : <StoreLogoIcon size={22} />}
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl text-white bg-gradient-to-tr from-orange-600 to-amber-500 shadow-sm">
+                {storeSettings.logoMode === "image" && storeSettings.logoUrl ? (
+                  <img src={storeSettings.logoUrl} alt="" className="h-full w-full rounded-2xl object-cover" />
+                ) : (
+                  <StoreLogoIcon size={22} />
+                )}
               </span>
-              <h2 className="text-lg font-black text-white">{storeSettings.storeName}</h2>
+              <h2 className="text-lg font-black text-slate-900">{storeSettings.storeName}</h2>
             </div>
-            <p className="mt-4 text-sm leading-6 text-slate-400">Your neighborhood grocery store for carefully selected, fresh everyday essentials.</p>
-            <p className="mt-4 rounded-xl border border-[#263653] bg-[#111c32] px-3 py-2 text-xs font-semibold text-amber-200">Shop Time: {storeSettings.hours}</p>
+            <p className="mt-4 text-sm leading-6 text-slate-500">
+              Your neighborhood grocery store for carefully selected, fresh everyday essentials.
+            </p>
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+              Shop Time: {storeSettings.hours}
+            </p>
           </section>
 
           <section>
-            <h3 className="text-sm font-black uppercase tracking-wider text-white">Contact & Address</h3>
-            <p className="mt-4 text-sm leading-6 text-slate-400">{storeSettings.address}</p>
-            <a href={`tel:+${storeSettings.whatsappNumber.replace(/\D/g, "")}`} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-slate-200 transition-all duration-200 hover:text-orange-300"><Phone size={16} /> +{storeSettings.whatsappNumber}</a>
-            <a href={`https://wa.me/${storeSettings.whatsappNumber.replace(/\D/g, "")}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-[#25D366] transition-all duration-200 hover:text-emerald-200"><MessageCircle size={16} /> Chat on WhatsApp</a>
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">Contact & Address</h3>
+            <p className="mt-4 text-sm leading-6 text-slate-500">{storeSettings.address}</p>
+            <a
+              href={`tel:+${storeSettings.whatsappNumber.replace(/\D/g, "")}`}
+              className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-slate-700 transition hover:text-orange-600"
+            >
+              <Phone size={16} className="text-orange-500" /> +{storeSettings.whatsappNumber}
+            </a>
+            <a
+              href={`https://wa.me/${storeSettings.whatsappNumber.replace(/\D/g, "")}`}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-[#25D366] transition hover:text-emerald-700"
+            >
+              <MessageCircle size={16} /> Chat on WhatsApp
+            </a>
           </section>
 
           <section>
-            <h3 className="text-sm font-black uppercase tracking-wider text-white">Our Quality Promise</h3>
-            <ul className="mt-4 space-y-3 text-sm text-slate-400">
-              <li className="flex gap-2"><CheckCircle2 size={16} className="shrink-0 text-emerald-400" />100% Pure & Cleaned Goods</li>
-              <li className="flex gap-2"><CheckCircle2 size={16} className="shrink-0 text-emerald-400" />Fair Pricing</li>
-              <li className="flex gap-2"><CheckCircle2 size={16} className="shrink-0 text-emerald-400" />Quick Village Pickup</li>
-              <li className="flex gap-2"><CheckCircle2 size={16} className="shrink-0 text-emerald-400" />Digital Payments Accepted</li>
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">Our Quality Promise</h3>
+            <ul className="mt-4 space-y-3 text-sm text-slate-500">
+              <li className="flex gap-2"><CheckCircle2 size={16} className="shrink-0 text-emerald-500" />100% Pure & Cleaned Goods</li>
+              <li className="flex gap-2"><CheckCircle2 size={16} className="shrink-0 text-emerald-500" />Fair Pricing</li>
+              <li className="flex gap-2"><CheckCircle2 size={16} className="shrink-0 text-emerald-500" />Quick Village Pickup</li>
+              <li className="flex gap-2"><CheckCircle2 size={16} className="shrink-0 text-emerald-500" />Digital Payments Accepted</li>
             </ul>
           </section>
 
           <section>
-            <h3 className="text-sm font-black uppercase tracking-wider text-white">Quick Actions</h3>
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">Quick Actions</h3>
             <div className="mt-4 grid gap-3">
-              <a href={`tel:+${storeSettings.whatsappNumber.replace(/\D/g, "")}`} className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm font-bold text-sky-300 transition-all duration-200 hover:bg-sky-500/20"><Phone size={18} /> Direct Call</a>
-              <a href={storeSettings.mapLink} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-[#EA4335] transition-all duration-200 hover:bg-red-500/20"><MapPin size={18} /> Google Maps</a>
-              {storeSettings.socialLinks.map((link) => <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#263653] bg-[#111c32] px-4 py-3 text-sm font-bold text-slate-200 transition hover:border-orange-400">{/instagram/i.test(link.label) ? <Camera size={17} className="text-fuchsia-400" /> : <ExternalLink size={17} />}{link.label}</a>)}
+              <a
+                href={`tel:+${storeSettings.whatsappNumber.replace(/\D/g, "")}`}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-bold text-sky-700 transition hover:bg-sky-100"
+              >
+                <Phone size={18} /> Direct Call
+              </a>
+              <a
+                href={storeSettings.mapLink}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-[#EA4335] transition hover:bg-red-100"
+              >
+                <MapPin size={18} /> Google Maps
+              </a>
+              {storeSettings.socialLinks.map((link) => (
+                <a
+                  key={link.id}
+                  href={link.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-orange-500 hover:text-orange-600"
+                >
+                  {/instagram/i.test(link.label) ? <Camera size={17} className="text-fuchsia-500" /> : <ExternalLink size={17} />}
+                  {link.label}
+                </a>
+              ))}
             </div>
           </section>
         </div>
-        <div className="border-t border-[#263653] px-4 py-4 text-center text-xs text-slate-500">© {new Date().getFullYear()} {storeSettings.storeName}. All rights reserved. <span className="mx-2">·</span> <span aria-live="polite">{viewCount.toLocaleString()} visits</span></div>
+        <div className="border-t border-slate-200 px-4 py-4 text-center text-xs text-slate-500">
+          © {new Date().getFullYear()} {storeSettings.storeName}. All rights reserved. <span className="mx-2">·</span> <span aria-live="polite">{viewCount.toLocaleString()} visits</span>
+        </div>
       </footer>
 
+      {/* Order Receipt Preview Modal - Clean Light */}
       {isReceiptOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-          <section role="dialog" aria-modal="true" aria-labelledby="receipt-title" className="w-full max-w-xl overflow-hidden rounded-3xl border border-[#34445f] bg-[#0f172a] shadow-2xl">
-            <header className="flex items-center justify-between border-b border-[#263653] px-4 py-4"><h2 id="receipt-title" className="font-black text-white">Order receipt preview</h2><button onClick={() => setReceiptOpen(false)} aria-label="Close receipt preview" className="rounded-lg p-2 text-slate-300 hover:bg-white/10"><X size={20} /></button></header>
-            <div className="max-h-[65vh] overflow-auto bg-slate-950 p-3 sm:p-5">
-              <article ref={receiptRef} className="mx-auto w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-4 text-slate-100 shadow-xl sm:p-6">
-                <header className="flex items-center gap-3 border-b border-dashed border-slate-600 pb-4">
-                  {storeSettings.logoMode === "image" && storeSettings.logoUrl ? <img src={storeSettings.logoUrl} alt="Store logo" className="h-12 w-12 rounded-xl object-cover" /> : <span className="grid h-12 w-12 place-items-center rounded-xl text-white" style={{ backgroundColor: storeSettings.accentColor }}><StoreLogoIcon size={25} /></span>}
-                  <div className="min-w-0"><h3 className="truncate text-base font-black text-white">{storeSettings.storeName}</h3><p className="text-xs text-slate-400">{storeSettings.address}</p></div>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <section role="dialog" aria-modal="true" aria-labelledby="receipt-title" className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <header className="flex items-center justify-between border-b border-slate-200 px-4 py-4 bg-slate-50">
+              <h2 id="receipt-title" className="font-black text-slate-900">Order receipt preview</h2>
+              <button onClick={() => setReceiptOpen(false)} aria-label="Close receipt preview" className="rounded-lg p-2 text-slate-500 hover:bg-slate-200"><X size={20} /></button>
+            </header>
+            <div className="max-h-[65vh] overflow-auto bg-slate-100 p-3 sm:p-5">
+              <article ref={receiptRef} className="mx-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 text-slate-800 shadow-sm sm:p-6">
+                <header className="flex items-center gap-3 border-b border-dashed border-slate-300 pb-4">
+                  {storeSettings.logoMode === "image" && storeSettings.logoUrl ? (
+                    <img src={storeSettings.logoUrl} alt="Store logo" className="h-12 w-12 rounded-xl object-cover" />
+                  ) : (
+                    <span className="grid h-12 w-12 place-items-center rounded-xl text-white bg-gradient-to-tr from-orange-600 to-amber-500">
+                      <StoreLogoIcon size={24} />
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="truncate text-base font-black text-slate-900">{storeSettings.storeName}</h3>
+                    <p className="text-xs text-slate-500">{storeSettings.address}</p>
+                  </div>
                 </header>
-                <div className="flex items-center justify-between py-4"><div><h4 className="text-sm font-black uppercase tracking-widest text-amber-300">Order receipt</h4><p className="mt-1 text-[11px] text-slate-400">{new Date().toLocaleDateString("en-IN")}</p></div><span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-bold text-emerald-300">Confirmation preview</span></div>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl bg-slate-800/70 p-3 text-xs"><dt className="text-slate-400">Customer</dt><dd className="text-right font-semibold text-white">{custName.trim()}</dd><dt className="text-slate-400">Phone</dt><dd className="text-right font-semibold text-white">{custPhone.replace(/\D/g, "")}</dd>{custAddress.trim() && <><dt className="text-slate-400">Address</dt><dd className="text-right font-semibold text-white">{custAddress.trim()}</dd></>}<dt className="text-slate-400">Fulfilment</dt><dd className="text-right font-semibold text-white">{fulfillment === "pickup" ? "Store pickup" : `Home delivery · ${deliverySlot}`}</dd></dl>
-                <div className="mt-4"><div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-slate-700 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400"><span>Item</span><span>Qty</span><span className="text-right">Amount</span></div><ul className="divide-y divide-slate-800">{Object.values(cart).map((item) => <li key={item.id} className="grid grid-cols-[1fr_auto_auto] items-start gap-2 py-2.5 text-xs"><span className="font-semibold text-slate-100">{item.name}<span className="mt-0.5 block text-[10px] font-normal text-slate-400">₹{item.price.toFixed(2)} each</span></span><span className="text-slate-300">×{item.quantity}</span><span className="text-right font-bold text-white">₹{(item.price * item.quantity).toFixed(2)}</span></li>)}</ul></div>
-                <div className="mt-2 space-y-2 border-t border-slate-700 pt-3 text-xs">{cartDiscount > 0 && <div className="flex justify-between text-emerald-300"><span>Offers & savings</span><span>−₹{cartDiscount.toFixed(2)}</span></div>}<div className="flex justify-between text-base font-black text-white"><span>Payable total</span><span>₹{cartTotal.toFixed(2)}</span></div></div>
-                {storeSettings.upiId && <div className="mt-4 flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-800 p-3"><img src={storeSettings.upiQrUrl || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`upi://pay?pa=${storeSettings.upiId}&pn=${storeSettings.upiName}&am=${cartTotal.toFixed(2)}&cu=INR`)}`} alt="Store UPI QR code" className="h-20 w-20 rounded bg-white object-contain p-1" /><div className="min-w-0 flex-1"><p className="text-xs font-bold text-white">Pay via UPI</p><p className="truncate text-[10px] text-slate-400">{storeSettings.upiId}</p><a href={`upi://pay?pa=${encodeURIComponent(storeSettings.upiId)}&pn=${encodeURIComponent(storeSettings.upiName)}&am=${cartTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Store order")}`} className="mt-2 inline-flex rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white">Pay ₹{cartTotal.toFixed(2)}</a></div></div>}
+                <div className="flex items-center justify-between py-4">
+                  <div>
+                    <h4 className="text-sm font-black uppercase tracking-widest text-orange-600">Order receipt</h4>
+                    <p className="mt-1 text-[11px] text-slate-500">{new Date().toLocaleDateString("en-IN")}</p>
+                  </div>
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                    Confirmation preview
+                  </span>
+                </div>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl bg-slate-50 p-3 text-xs border border-slate-200">
+                  <dt className="text-slate-500">Customer</dt><dd className="text-right font-semibold text-slate-900">{custName.trim()}</dd>
+                  <dt className="text-slate-500">Phone</dt><dd className="text-right font-semibold text-slate-900">{custPhone.replace(/\D/g, "")}</dd>
+                  {custAddress.trim() && <><dt className="text-slate-500">Address</dt><dd className="text-right font-semibold text-slate-900">{custAddress.trim()}</dd></>}
+                  <dt className="text-slate-500">Fulfilment</dt><dd className="text-right font-semibold text-slate-900">{fulfillment === "pickup" ? "Store pickup" : `Home delivery · ${deliverySlot}`}</dd>
+                </dl>
+                <div className="mt-4">
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-slate-200 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    <span>Item</span><span>Qty</span><span className="text-right">Amount</span>
+                  </div>
+                  <ul className="divide-y divide-slate-100">
+                    {Object.values(cart).map((item) => (
+                      <li key={item.id} className="grid grid-cols-[1fr_auto_auto] items-start gap-2 py-2.5 text-xs">
+                        <span className="font-semibold text-slate-900">{item.name}<span className="mt-0.5 block text-[10px] font-normal text-slate-500">₹{item.price.toFixed(2)} each</span></span>
+                        <span className="text-slate-600">×{item.quantity}</span>
+                        <span className="text-right font-bold text-slate-900">₹{(item.price * item.quantity).toFixed(2)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="mt-2 space-y-2 border-t border-slate-200 pt-3 text-xs">
+                  {cartDiscount > 0 && <div className="flex justify-between text-emerald-600 font-semibold"><span>Offers & savings</span><span>−₹{cartDiscount.toFixed(2)}</span></div>}
+                  <div className="flex justify-between text-base font-black text-slate-900"><span>Payable total</span><span>₹{cartTotal.toFixed(2)}</span></div>
+                </div>
+                {storeSettings.upiId && (
+                  <div className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <img src={storeSettings.upiQrUrl || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`upi://pay?pa=${storeSettings.upiId}&pn=${storeSettings.upiName}&am=${cartTotal.toFixed(2)}&cu=INR`)}`} alt="Store UPI QR code" className="h-20 w-20 rounded bg-white object-contain p-1 border border-slate-200" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900">Pay via UPI</p>
+                      <p className="truncate text-[10px] text-slate-500">{storeSettings.upiId}</p>
+                      <a href={`upi://pay?pa=${encodeURIComponent(storeSettings.upiId)}&pn=${encodeURIComponent(storeSettings.upiName)}&am=${cartTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Store order")}`} className="mt-2 inline-flex rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-[10px] font-bold text-white shadow-xs">Pay ₹{cartTotal.toFixed(2)}</a>
+                    </div>
+                  </div>
+                )}
                 <p className="mt-4 text-center text-[10px] text-slate-500">Thank you for shopping with us.</p>
               </article>
             </div>
-            <div className="flex flex-col gap-2 p-4 sm:flex-row"><button onClick={() => setReceiptOpen(false)} className="min-h-11 flex-1 rounded-xl border border-[#34445f] bg-[#152036] px-4 py-2 text-sm font-bold text-slate-200">Back to order</button><button onClick={shareOrder} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-black text-white" style={{ backgroundColor: storeSettings.accentColor }}><MessageCircle size={18} /> Share order</button></div>
+            <div className="flex flex-col gap-2 p-4 sm:flex-row bg-slate-50 border-t border-slate-200">
+              <button onClick={() => setReceiptOpen(false)} className="min-h-11 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 transition">Back to order</button>
+              <button onClick={shareOrder} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-black text-white bg-orange-500 hover:bg-orange-600 shadow-sm transition"><MessageCircle size={18} /> Share order</button>
+            </div>
           </section>
         </div>
       )}
 
-      {isPromoOpen && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" aria-labelledby="promo-title" className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-amber-400/40 bg-slate-900 shadow-2xl">{storeSettings.promoImageUrl && <img src={storeSettings.promoImageUrl} alt="" className="h-48 w-full object-cover" />}<button onClick={() => { setPromoOpen(false); sessionStorage.setItem("jay-store-promo-dismissed", "true"); }} aria-label="Close offer" className="absolute right-3 top-3 rounded-full bg-black/60 p-2 text-white"><X size={18} /></button><div className="p-6"><p className="mb-2 text-xs font-black uppercase tracking-widest text-amber-400">Special offer</p><h2 id="promo-title" className="text-2xl font-black text-white">{storeSettings.promoTitle || "Seasonal offer"}</h2><p className="mt-2 text-sm leading-6 text-slate-300">{storeSettings.promoText}</p><button onClick={() => { setPromoOpen(false); sessionStorage.setItem("jay-store-promo-dismissed", "true"); }} className="mt-5 rounded-xl bg-amber-500 px-5 py-3 text-sm font-black text-slate-950">Explore store</button></div></section></div>}
+      {isPromoOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <section role="dialog" aria-modal="true" aria-labelledby="promo-title" className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-amber-300 bg-white shadow-2xl">
+            {storeSettings.promoImageUrl && <img src={storeSettings.promoImageUrl} alt="" className="h-48 w-full object-cover" />}
+            <button onClick={() => { setPromoOpen(false); sessionStorage.setItem("jay-store-promo-dismissed", "true"); }} aria-label="Close offer" className="absolute right-3 top-3 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"><X size={18} /></button>
+            <div className="p-6">
+              <p className="mb-2 text-xs font-black uppercase tracking-widest text-orange-600">Special offer</p>
+              <h2 id="promo-title" className="text-2xl font-black text-slate-900">{storeSettings.promoTitle || "Seasonal offer"}</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{storeSettings.promoText}</p>
+              <button onClick={() => { setPromoOpen(false); sessionStorage.setItem("jay-store-promo-dismissed", "true"); }} className="mt-5 rounded-xl bg-orange-500 hover:bg-orange-600 px-5 py-3 text-sm font-black text-white shadow-sm transition">Explore store</button>
+            </div>
+          </section>
+        </div>
+      )}
 
-      {confetti && <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-[100] overflow-hidden">{Array.from({ length: 42 }, (_, index) => <span key={index} className="confetti-piece" style={{ left: `${(index * 37) % 100}%`, backgroundColor: ["#f59e0b", "#10b981", "#f43f5e", "#38bdf8"][index % 4], animationDelay: `${(index % 9) * 0.08}s` }} />)}</div>}
+      {confetti && (
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-[100] overflow-hidden">
+          {Array.from({ length: 42 }, (_, index) => (
+            <span key={index} className="confetti-piece" style={{ left: `${(index * 37) % 100}%`, backgroundColor: ["#f59e0b", "#10b981", "#f43f5e", "#38bdf8"][index % 4], animationDelay: `${(index % 9) * 0.08}s` }} />
+          ))}
+        </div>
+      )}
 
-      {/* Floating Bottom Cart */}
+      {/* Floating Bottom Cart Capsule when items in cart */}
       {totalCartCount > 0 && (
-        <div className="fixed bottom-4 left-4 right-4 max-w-xl mx-auto z-30">
-          <div className="bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 text-white rounded-2xl p-3 shadow-2xl flex items-center justify-between border border-amber-300/40">
-            <div className="flex items-center gap-3 pl-1">
-              <div className="cart-heartbeat w-10 h-10 rounded-xl bg-black/25 flex items-center justify-center text-lg font-bold text-amber-200">
-                <ShoppingBag size={20} />
+        <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto z-30">
+          <div className="bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 text-white rounded-2xl p-2.5 shadow-xl flex items-center justify-between border border-amber-300/40">
+            <div className="flex items-center gap-2.5 pl-1">
+              <div className="cart-heartbeat w-9 h-9 rounded-xl bg-black/20 flex items-center justify-center text-lg font-bold text-amber-200">
+                <ShoppingBag size={18} />
               </div>
               <div>
-                <div className="text-[11px] font-semibold text-amber-100">Order Summary</div>
-                <div className="text-sm font-black flex items-center gap-2">
-                  <span className="px-2 py-0.2 bg-white text-slate-900 rounded-full text-xs font-black">
+                <div className="text-[10px] font-semibold text-amber-100">Order Summary</div>
+                <div className="text-xs font-black flex items-center gap-1.5">
+                  <span className="px-1.5 py-0.5 bg-white text-slate-900 rounded-full text-[10px] font-black shadow-xs">
                     {totalCartCount}
                   </span>
-                  <span>items selected</span>
+                  <span>items · ₹{cartTotal.toFixed(0)}</span>
                 </div>
               </div>
             </div>
 
             <button
               onClick={() => setCartOpen(true)}
-              className="px-4 py-2 bg-slate-950 text-amber-300 hover:text-white text-xs font-bold rounded-xl flex items-center gap-1 shadow-lg transition"
+              className="px-3.5 py-1.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1 shadow-md transition"
             >
-              <span>Review & Order</span><ExternalLink size={14} />
+              <span>Review & Order</span><ExternalLink size={13} />
             </button>
           </div>
         </div>
       )}
 
-      {/* Cart Modal */}
+      {/* 7. Floating Glassmorphic Bottom Dock: Translucent nav bar */}
+      <nav
+        aria-label="Bottom Navigation Dock"
+        className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md glass-dock rounded-2xl px-2 py-1.5 shadow-xl border border-slate-200/80"
+      >
+        <div className="flex items-center justify-around">
+          <button
+            type="button"
+            onClick={() => {
+              window.scrollTo({ top: 0, behavior: "smooth" });
+              setActiveCategory("all");
+              setFavoritesOnly(false);
+            }}
+            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition ${
+              activeCategory === "all" && !favoritesOnly ? "text-orange-600 font-bold" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <Home size={19} />
+            <span className="text-[10px]">Home</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const el = document.getElementById("categories-section");
+              if (el) el.scrollIntoView({ behavior: "smooth" });
+            }}
+            className="flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition"
+          >
+            <FolderOpen size={19} />
+            <span className="text-[10px]">Categories</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCartOpen(true)}
+            className="relative flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition"
+          >
+            <div className="relative">
+              <ShoppingBag size={19} className={totalCartCount > 0 ? "text-orange-600" : ""} />
+              {totalCartCount > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 bg-orange-600 text-white font-extrabold text-[10px] min-w-4 h-4 px-1 rounded-full flex items-center justify-center shadow-xs">
+                  {totalCartCount}
+                </span>
+              )}
+            </div>
+            <span className={`text-[10px] ${totalCartCount > 0 ? "font-bold text-orange-600" : ""}`}>Cart</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFavoritesOnly((prev) => !prev)}
+            className={`relative flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition ${
+              favoritesOnly ? "text-rose-600 font-bold" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <div className="relative">
+              <Heart size={19} fill={favoritesOnly ? "currentColor" : "none"} />
+              {favorites.length > 0 && !favoritesOnly && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500" />
+              )}
+            </div>
+            <span className="text-[10px]">Favorites</span>
+          </button>
+
+          <a
+            href="/admin"
+            className="flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition"
+          >
+            <LockKeyhole size={19} />
+            <span className="text-[10px]">Admin</span>
+          </a>
+        </div>
+      </nav>
+
+      {/* Cart Modal - Clean Light */}
       {isCartOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="cart-drawer bg-[#0f172a] border border-[#1f2e4d] w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-[#1f2e4d] flex items-center justify-between bg-[#152036]">
-              <h3 className="font-black text-sm text-white">Order Summary</h3>
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="cart-drawer bg-white border border-slate-200 w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <h3 className="font-black text-sm text-slate-900">Order Summary</h3>
               <button
                 onClick={() => setCartOpen(false)}
-                className="w-8 h-8 rounded-full bg-[#0c1322] text-slate-400 hover:text-white flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-slate-200/80 text-slate-600 hover:text-slate-900 hover:bg-slate-300 flex items-center justify-center transition"
               >
                 <X size={17} />
               </button>
             </div>
 
-            <div className="p-4 overflow-y-auto space-y-2 flex-1 divide-y divide-[#1f2e4d]">
+            <div className="p-4 overflow-y-auto space-y-2 flex-1 divide-y divide-slate-100">
               {Object.keys(cart).map((k) => {
                 const item = cart[k];
                 return (
-                  <div key={k} className="py-2 flex items-center justify-between gap-2">
+                  <div key={k} className="py-2.5 flex items-center justify-between gap-2">
                     <div className="flex-1 pr-2">
-                      <h5 className="text-xs font-bold text-white">{item.name}</h5>
-                      <span className="text-[10px] text-slate-400">₹{item.price.toFixed(2)} each · ₹{(item.quantity * item.price).toFixed(2)}</span>
+                      <h5 className="text-xs font-bold text-slate-900">{item.name}</h5>
+                      <span className="text-[10px] text-slate-500">₹{item.price.toFixed(2)} each · ₹{(item.quantity * item.price).toFixed(2)}</span>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center bg-[#0c1322] border border-[#1f2e4d] rounded-xl p-0.5">
+                      <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-0.5">
                         <button
                           onClick={() => updateQty(k, -1)}
-                          className="w-6 h-6 rounded-lg bg-[#152036] text-slate-200 flex items-center justify-center font-bold"
+                          className="w-6 h-6 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center font-bold transition"
                         >
                           <Minus size={13} />
                         </button>
-                        <span className="w-7 text-center font-black text-xs text-white">
+                        <span className="w-7 text-center font-black text-xs text-slate-900">
                           {item.quantity}
                         </span>
                         <button
                           onClick={() => updateQty(k, 1)}
-                          className="w-6 h-6 rounded-lg bg-orange-500 text-white flex items-center justify-center font-bold"
+                          className="w-6 h-6 rounded-lg bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center font-bold transition"
                         >
                           <Plus size={13} />
                         </button>
@@ -867,18 +1279,64 @@ export default function CustomerStorePage() {
                   </div>
                 );
               })}
-              <div className="space-y-2 border-t border-slate-700 pt-3 text-xs"><div className="flex justify-between text-slate-300"><span>Subtotal</span><span>₹{Object.values(cart).reduce((sum, item) => sum + item.quantity * (products.find((product) => product.id === item.id)?.originalPrice ?? item.price), 0).toFixed(2)}</span></div>{cartDiscount > 0 && <div className="flex justify-between text-emerald-300"><span>Offers & savings</span><span>−₹{cartDiscount.toFixed(2)}</span></div>}<div className="flex justify-between font-black text-white"><span>Payable total</span><span>₹{cartTotal.toFixed(2)}</span></div></div>
+              <div className="space-y-2 border-t border-slate-200 pt-3 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal</span>
+                  <span>₹{Object.values(cart).reduce((sum, item) => sum + item.quantity * (products.find((product) => product.id === item.id)?.originalPrice ?? item.price), 0).toFixed(2)}</span>
+                </div>
+                {cartDiscount > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-semibold">
+                    <span>Offers & savings</span>
+                    <span>−₹{cartDiscount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-black text-slate-900 text-sm">
+                  <span>Payable total</span>
+                  <span className="text-orange-600 font-extrabold">₹{cartTotal.toFixed(2)}</span>
+                </div>
+              </div>
             </div>
 
-            <div className="p-4 bg-[#152036] border-t border-[#1f2e4d] space-y-3">
-              <div className="grid grid-cols-2 gap-2"><button onClick={() => setFulfillment("delivery")} className={`rounded-lg border px-3 py-2 text-xs font-bold ${fulfillment === "delivery" ? "border-amber-400 bg-amber-400/10 text-amber-200" : "border-slate-700 text-slate-400"}`}>Home Delivery</button><button onClick={() => setFulfillment("pickup")} className={`rounded-lg border px-3 py-2 text-xs font-bold ${fulfillment === "pickup" ? "border-amber-400 bg-amber-400/10 text-amber-200" : "border-slate-700 text-slate-400"}`}>Store Pickup</button></div>
-              {fulfillment === "delivery" && <><select value={deliverySlot} onChange={(event) => setDeliverySlot(event.target.value)} aria-label="Preferred delivery slot" className="w-full rounded-xl border border-[#1f2e4d] bg-[#0c1322] px-3 py-2 text-xs text-white"><option>Morning</option><option>Afternoon</option><option>Evening</option></select>{cartTotal < storeSettings.minimumDeliveryOrder && <p className="text-[11px] text-amber-300">Minimum home delivery order is ₹{storeSettings.minimumDeliveryOrder}. Choose pickup or add ₹{(storeSettings.minimumDeliveryOrder - cartTotal).toFixed(2)} more.</p>}</>}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setFulfillment("delivery")}
+                  className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${fulfillment === "delivery" ? "border-orange-500 bg-orange-50 text-orange-700 shadow-xs" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
+                >
+                  Home Delivery
+                </button>
+                <button
+                  onClick={() => setFulfillment("pickup")}
+                  className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${fulfillment === "pickup" ? "border-orange-500 bg-orange-50 text-orange-700 shadow-xs" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
+                >
+                  Store Pickup
+                </button>
+              </div>
+              {fulfillment === "delivery" && (
+                <>
+                  <select
+                    value={deliverySlot}
+                    onChange={(event) => setDeliverySlot(event.target.value)}
+                    aria-label="Preferred delivery slot"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-orange-500"
+                  >
+                    <option>Morning</option>
+                    <option>Afternoon</option>
+                    <option>Evening</option>
+                  </select>
+                  {cartTotal < storeSettings.minimumDeliveryOrder && (
+                    <p className="text-[11px] text-amber-700 font-medium">
+                      Minimum home delivery order is ₹{storeSettings.minimumDeliveryOrder}. Choose pickup or add ₹{(storeSettings.minimumDeliveryOrder - cartTotal).toFixed(2)} more.
+                    </p>
+                  )}
+                </>
+              )}
               <input
                 type="text"
                 value={custName}
                 onChange={(e) => setCustName(e.target.value)}
                 placeholder="Your name *"
-                className="w-full px-3 py-2 bg-[#0c1322] border border-[#1f2e4d] rounded-xl text-xs text-white focus:outline-none"
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500"
               />
               <input
                 type="tel"
@@ -886,20 +1344,20 @@ export default function CustomerStorePage() {
                 value={custPhone}
                 onChange={(e) => setCustPhone(e.target.value)}
                 placeholder="10-digit mobile number *"
-                className="w-full px-3 py-2 bg-[#0c1322] border border-[#1f2e4d] rounded-xl text-xs text-white focus:outline-none"
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500"
               />
               <input
                 type="text"
                 value={custAddress}
                 onChange={(e) => setCustAddress(e.target.value)}
                 placeholder="Village / area"
-                className="w-full px-3 py-2 bg-[#0c1322] border border-[#1f2e4d] rounded-xl text-xs text-white focus:outline-none"
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500"
               />
 
               <button
                 onClick={handleSendWhatsAppOrder}
                 disabled={isPreparingReceipt}
-                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-black rounded-2xl flex items-center justify-center gap-2 shadow-xl disabled:cursor-wait disabled:opacity-70"
+                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-700 hover:to-teal-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 shadow-lg disabled:cursor-wait disabled:opacity-70 transition"
               >
                 {isPreparingReceipt ? "Preparing receipt…" : <><MessageCircle size={18} /> Order via WhatsApp</>}
               </button>

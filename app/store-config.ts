@@ -71,6 +71,13 @@ export const DEFAULT_CATEGORIES: StoreCategory[] = [
   { id: "પૂજાપો-અન્ય", name: "Pooja & Others", icon: "Lamp" },
 ];
 
+const CLEAN_LIGHT_PALETTE: ThemePalette = {
+  primary: "#ea580c",
+  secondary: "#c2410c",
+  background: "#f8fafc",
+  accent: "#f59e0b",
+};
+
 const ROYAL_AMBER_PALETTE: ThemePalette = {
   primary: "#f59e0b",
   secondary: "#b45309",
@@ -91,14 +98,14 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   categories: DEFAULT_CATEGORIES,
   socialLinks: [],
   mapLink: "https://maps.google.com/?q=Zanzmer,Dhoraji,Gujarat",
-  theme: "royalAmber",
-  animationTheme: "vibrant",
-  appearance: "dark",
-  accentColor: ROYAL_AMBER_PALETTE.accent,
-  primaryColor: ROYAL_AMBER_PALETTE.primary,
-  secondaryColor: ROYAL_AMBER_PALETTE.secondary,
-  backgroundColor: ROYAL_AMBER_PALETTE.background,
-  cardStyle: "glassy3d",
+  theme: "cleanLight",
+  animationTheme: "subtle",
+  appearance: "light",
+  accentColor: CLEAN_LIGHT_PALETTE.accent,
+  primaryColor: CLEAN_LIGHT_PALETTE.primary,
+  secondaryColor: CLEAN_LIGHT_PALETTE.secondary,
+  backgroundColor: CLEAN_LIGHT_PALETTE.background,
+  cardStyle: "flat",
   openingTime: "06:00",
   closingTime: "21:00",
   minimumDeliveryOrder: 200,
@@ -112,6 +119,12 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
 };
 
 export const THEME_PRESETS: Record<string, ThemePreset> = {
+  cleanLight: {
+    label: "Clean Light",
+    appearance: "light",
+    cardStyle: "flat",
+    palette: CLEAN_LIGHT_PALETTE,
+  },
   emeraldGrocery3d: {
     label: "3D Emerald Grocery",
     appearance: "dark",
@@ -228,23 +241,24 @@ export function applyThemePreset(current: StoreSettings, presetKey: string): Sto
 }
 
 export function storeThemeCssVars(settings: StoreSettings): Record<string, string> {
+  const isDark = settings.appearance === "dark";
   return {
-    "--primary": settings.primaryColor,
-    "--secondary": settings.secondaryColor,
-    "--background": settings.backgroundColor,
-    "--accent": settings.accentColor,
-    "--store-primary": settings.primaryColor,
-    "--store-secondary": settings.secondaryColor,
-    "--store-background": settings.backgroundColor,
-    "--store-accent": settings.accentColor,
-    "--store-foreground": settings.appearance === "light" ? "#0f172a" : "#f8fafc",
-    "--store-surface": settings.appearance === "light" ? "#ffffff" : "#111c32",
+    "--primary": settings.primaryColor || "#ea580c",
+    "--secondary": settings.secondaryColor || "#c2410c",
+    "--background": isDark ? (settings.backgroundColor || "#070b14") : "#f8fafc",
+    "--accent": settings.accentColor || "#f59e0b",
+    "--store-primary": settings.primaryColor || "#ea580c",
+    "--store-secondary": settings.secondaryColor || "#c2410c",
+    "--store-background": isDark ? (settings.backgroundColor || "#070b14") : "#f8fafc",
+    "--store-accent": settings.accentColor || "#f59e0b",
+    "--store-foreground": isDark ? "#f8fafc" : "#0f172a",
+    "--store-surface": isDark ? "#111c32" : "#ffffff",
   };
 }
 
 export function normalizeStoreSettings(data: Record<string, unknown> = {}): StoreSettings {
   const preset = THEME_PRESETS[String(data.theme ?? DEFAULT_STORE_SETTINGS.theme)];
-  const fallbackPalette = preset?.palette ?? ROYAL_AMBER_PALETTE;
+  const fallbackPalette = preset?.palette ?? CLEAN_LIGHT_PALETTE;
   const accentColor = parseHexColor(data.accentColor, fallbackPalette.accent);
 
   return {
@@ -268,7 +282,7 @@ export function normalizeStoreSettings(data: Record<string, unknown> = {}): Stor
     mapLink: String(data.mapLink ?? DEFAULT_STORE_SETTINGS.mapLink),
     theme: String(data.theme ?? DEFAULT_STORE_SETTINGS.theme),
     animationTheme: parseAnimationTheme(data.animationTheme),
-    appearance: data.appearance === "light" ? "light" : "dark",
+    appearance: data.appearance === "dark" ? "dark" : "light",
     accentColor,
     primaryColor: parseHexColor(data.primaryColor, data.theme === "custom" ? accentColor : fallbackPalette.primary),
     secondaryColor: parseHexColor(data.secondaryColor, fallbackPalette.secondary),

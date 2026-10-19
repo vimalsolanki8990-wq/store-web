@@ -12,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark h-full">
+    <html lang="en" className="h-full">
       <head>
         <link
           rel="stylesheet"
@@ -28,7 +28,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="bg-slate-50 dark:bg-[#070b14] text-slate-800 dark:text-slate-100 min-h-full flex flex-col antialiased">
+      <body className="bg-[#f8fafc] text-slate-800 min-h-full flex flex-col antialiased">
         {children}
       </body>
     </html>
