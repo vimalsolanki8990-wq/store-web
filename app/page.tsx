@@ -118,8 +118,6 @@ export default function CustomerStorePage() {
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
   const [custAddress, setCustAddress] = useState("");
-  const [deliverySlot, setDeliverySlot] = useState("Evening");
-  const [fulfillment, setFulfillment] = useState<"delivery" | "pickup">("delivery");
   const [isPromoOpen, setPromoOpen] = useState(false);
   const [isInstallPromptVisible, setInstallPromptVisible] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -129,6 +127,7 @@ export default function CustomerStorePage() {
   const [speechError, setSpeechError] = useState("");
   const [isReceiptOpen, setReceiptOpen] = useState(false);
   const [isPreparingReceipt, setPreparingReceipt] = useState(false);
+  const [isSharingReceipt, setIsSharingReceipt] = useState(false);
   const [receiptTimestamp, setReceiptTimestamp] = useState("");
   const [viewCount, setViewCount] = useState(0);
   const receiptRef = useRef<HTMLDivElement>(null);
@@ -483,10 +482,6 @@ export default function CustomerStorePage() {
       alert("Please enter a valid 10-digit mobile number.");
       return;
     }
-    if (fulfillment === "delivery" && cartTotal < storeSettings.minimumDeliveryOrder) {
-      alert(`Home delivery requires a minimum order of ₹${storeSettings.minimumDeliveryOrder}. Choose Store Pickup or add more items.`);
-      return;
-    }
 
     try {
       setPreparingReceipt(true);
@@ -508,6 +503,7 @@ export default function CustomerStorePage() {
 
   const downloadReceipt = async () => {
     if (!receiptRef.current) return;
+    setIsSharingReceipt(true);
     try {
       const image = await toPng(receiptRef.current, {
         cacheBust: true,
@@ -522,6 +518,8 @@ export default function CustomerStorePage() {
     } catch (error) {
       console.error("Receipt download failed:", error);
       showToast("બિલ ડાઉનલોડ કરવામાં ભૂલ આવી.");
+    } finally {
+      setIsSharingReceipt(false);
     }
   };
 
@@ -535,11 +533,10 @@ export default function CustomerStorePage() {
       items: Object.values(cart),
       total,
       discount: cartDiscount,
-      fulfillment,
-      deliverySlot: fulfillment === "delivery" ? deliverySlot : null,
       status: "new",
       createdAt: serverTimestamp(),
     };
+    setIsSharingReceipt(true);
     try {
       await addDoc(collection(db, "orders"), orderRecord);
       localStorage.setItem("jay-store-last-order", JSON.stringify(Object.values(cart)));
@@ -554,6 +551,7 @@ export default function CustomerStorePage() {
         if (navigator.canShare?.({ files: [receiptFile] })) {
           await navigator.share({ files: [receiptFile], title: "જય વછરાજ જનરલ સ્ટોર - બિલ" });
           setReceiptOpen(false);
+          setIsSharingReceipt(false);
           return;
         }
 
@@ -564,17 +562,23 @@ export default function CustomerStorePage() {
         download.click();
       }
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") return;
+      if (error instanceof Error && error.name === "AbortError") {
+        setIsSharingReceipt(false);
+        return;
+      }
       if (error instanceof Error && error.message.includes("Missing or insufficient permissions")) {
         alert("Your order could not be securely saved. Please contact the store or try again later.");
+        setIsSharingReceipt(false);
         return;
       }
       console.warn("Image sharing error:", error);
+    } finally {
+      setIsSharingReceipt(false);
     }
 
     // Direct WhatsApp fallback with clean details and NO trailing links or promotional watermarks
     const cleanDetails = Object.values(cart).map((item, idx) => `${idx + 1}. ${item.name} × ${item.quantity} = ₹${(item.quantity * item.price).toFixed(2)}`).join("\n");
-    const cleanMessage = `*જય વછરાજ જનરલ સ્ટોર - બિલ*\nગ્રાહક: ${custName.trim()} (${custPhone.replace(/\D/g, "")})\n${custAddress.trim() ? `સરનામું: ${custAddress.trim()}\n` : ""}ડિલિવરી: ${fulfillment === "pickup" ? "સ્ટોર પિકઅપ" : `હોમ ડિલિવરી (${deliverySlot})`}\n\n${cleanDetails}\n\n*કુલ રકમ: ₹${total.toFixed(2)}*`;
+    const cleanMessage = `*જય વછરાજ જનરલ સ્ટોર - ઓર્ડર*\nગ્રાહક: ${custName.trim()} (${custPhone.replace(/\D/g, "")})\n${custAddress.trim() ? `ગામ / વિસ્તાર: ${custAddress.trim()}\n` : ""}\n${cleanDetails}\n\n*કુલ રકમ: ₹${total.toFixed(2)}*`;
     window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(cleanMessage)}`, "_blank", "noopener,noreferrer");
     setReceiptOpen(false);
   };
@@ -1210,16 +1214,10 @@ export default function CustomerStorePage() {
                       )}
                       {custAddress.trim() && (
                         <div className="flex justify-between">
-                          <span className="text-slate-500">સરનામું:</span>
+                          <span className="text-slate-500">ગામ / વિસ્તાર:</span>
                           <span className="font-semibold text-slate-800 truncate max-w-[180px]">{custAddress.trim()}</span>
                         </div>
                       )}
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">ઓર્ડર પ્રકાર:</span>
-                        <span className="font-semibold text-slate-800">
-                          {fulfillment === "pickup" ? "સ્ટોર પિકઅપ" : `હોમ ડિલિવરી (${deliverySlot})`}
-                        </span>
-                      </div>
                     </div>
                   </>
                 )}
@@ -1589,45 +1587,12 @@ export default function CustomerStorePage() {
             </div>
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setFulfillment("delivery")}
-                  className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${fulfillment === "delivery" ? "border-orange-500 bg-orange-50 text-orange-700 shadow-xs" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
-                >
-                  Home Delivery
-                </button>
-                <button
-                  onClick={() => setFulfillment("pickup")}
-                  className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${fulfillment === "pickup" ? "border-orange-500 bg-orange-50 text-orange-700 shadow-xs" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"}`}
-                >
-                  Store Pickup
-                </button>
-              </div>
-              {fulfillment === "delivery" && (
-                <>
-                  <select
-                    value={deliverySlot}
-                    onChange={(event) => setDeliverySlot(event.target.value)}
-                    aria-label="Preferred delivery slot"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-orange-500"
-                  >
-                    <option>Morning</option>
-                    <option>Afternoon</option>
-                    <option>Evening</option>
-                  </select>
-                  {cartTotal < storeSettings.minimumDeliveryOrder && (
-                    <p className="text-[11px] text-amber-700 font-medium">
-                      Minimum home delivery order is ₹{storeSettings.minimumDeliveryOrder}. Choose pickup or add ₹{(storeSettings.minimumDeliveryOrder - cartTotal).toFixed(2)} more.
-                    </p>
-                  )}
-                </>
-              )}
               <input
                 type="text"
                 value={custName}
                 onChange={(e) => setCustName(e.target.value)}
                 placeholder="Your name *"
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 shadow-xs"
               />
               <input
                 type="tel"
@@ -1635,24 +1600,51 @@ export default function CustomerStorePage() {
                 value={custPhone}
                 onChange={(e) => setCustPhone(e.target.value)}
                 placeholder="10-digit mobile number *"
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 shadow-xs"
               />
               <input
                 type="text"
                 value={custAddress}
                 onChange={(e) => setCustAddress(e.target.value)}
                 placeholder="Village / area"
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 shadow-xs"
               />
 
               <button
+                type="button"
                 onClick={handleSendWhatsAppOrder}
                 disabled={isPreparingReceipt}
-                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-700 hover:to-teal-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 shadow-lg disabled:cursor-wait disabled:opacity-70 transition"
+                className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-700 hover:to-teal-600 active:scale-[0.99] text-white font-black rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/10 disabled:cursor-wait disabled:opacity-70 transition"
               >
-                {isPreparingReceipt ? "Preparing receipt…" : <><MessageCircle size={18} /> Order via WhatsApp</>}
+                {isPreparingReceipt ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    Preparing receipt…
+                  </span>
+                ) : (
+                  <>
+                    <MessageCircle size={18} /> Order via WhatsApp
+                  </>
+                )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Polished Circular Spinner with Backdrop Blur Overlay */}
+      {(isPreparingReceipt || isSharingReceipt) && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/45 backdrop-blur-xs text-white">
+          <div className="bg-white/95 text-slate-900 rounded-3xl p-6 shadow-2xl flex flex-col items-center gap-3 border border-orange-100 max-w-xs text-center animate-in fade-in zoom-in-95">
+            <div className="relative w-12 h-12 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-full border-4 border-orange-100 border-t-orange-500 animate-spin" />
+            </div>
+            <p className="font-bold text-sm text-slate-900">
+              {isPreparingReceipt ? "ઓર્ડર અને બિલ તૈયાર થઈ રહ્યું છે…" : "બિલ શેર થઈ રહ્યું છે…"}
+            </p>
+            <p className="text-xs text-slate-500">
+              {isPreparingReceipt ? "Preparing your clean bill slip..." : "Sharing your receipt image..."}
+            </p>
           </div>
         </div>
       )}

@@ -34,3 +34,31 @@ body {
   border: 1px solid rgba(254, 215, 170, 0.6);
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
 }
+
+/* Polished Skeleton Shimmer Animations */
+@keyframes shimmerAnim {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
+  background-size: 200% 100%;
+  animation: shimmerAnim 1.6s ease-in-out infinite;
+}
+
+.skeleton-shimmer-warm {
+  background: linear-gradient(90deg, #fef3c7 0%, #fed7aa 50%, #fef3c7 100%);
+  background-size: 200% 100%;
+  animation: shimmerAnim 1.6s ease-in-out infinite;
+}
+
+.skeleton-shimmer-dark {
+  background: linear-gradient(90deg, #131d31 0%, #223354 50%, #131d31 100%);
+  background-size: 200% 100%;
+  animation: shimmerAnim 1.6s ease-in-out infinite;
+}

@@ -5,6 +5,7 @@ import { db, auth, googleProvider } from "../firebase";
 import { isAdminEmail } from "../admin-config";
 import { ArrowDown, ArrowUp, Check, CircleCheck, CircleX, ExternalLink, FileDown, FileUp, FolderOpen, Image as ImageIcon, ImagePlus, LockKeyhole, MapPin, Megaphone, Pencil, Plus, Printer, Search, Settings, ShieldAlert, ShieldCheck, ShoppingBasket, Store, Trash2, X, ClipboardList, Copy, MessageCircle } from "lucide-react";
 import { AppearancePanel } from "./appearance-panel";
+import { ImageCropModal } from "./image-crop-modal";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, StoreCategory, StoreSettings } from "../store-config";
 import {
   signInWithPopup,
@@ -102,6 +103,7 @@ export default function VisualAdminProtectedPage() {
   const [editingBannerId, setEditingBannerId] = useState<string | null>(null);
   const [isSavingBanner, setIsSavingBanner] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [categoryName, setCategoryName] = useState("");
   const [categoryIcon, setCategoryIcon] = useState("Wheat");
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
@@ -113,6 +115,60 @@ export default function VisualAdminProtectedPage() {
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Image Cropper & Adjuster State
+  interface CropTarget {
+    type: "product" | "banner" | "logo" | "promo";
+    aspectRatio: number;
+    outputWidth: number;
+    outputHeight: number;
+    title: string;
+  }
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string>("");
+  const [cropTarget, setCropTarget] = useState<CropTarget | null>(null);
+
+  const openCropperForFile = (file: File, target: CropTarget) => {
+    if (!file.type.startsWith("image/")) {
+      showToast("કૃપા કરીને ફોટો ફાઈલ (JPG, PNG, WebP) પસંદ કરો.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      if (result) {
+        setCropImageSrc(result);
+        setCropTarget(target);
+        setCropModalOpen(true);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const openCropperForUrl = (url: string, target: CropTarget) => {
+    if (!url) return;
+    setCropImageSrc(url);
+    setCropTarget(target);
+    setCropModalOpen(true);
+  };
+
+  const handleCropConfirm = (croppedDataUrl: string) => {
+    if (!cropTarget) return;
+    if (cropTarget.type === "product") {
+      setFormPhotoUrl(croppedDataUrl);
+      showToast("પ્રોડક્ટ ફોટો ક્રોપ થઈ ગયો! સાચવવા માટે સેવ કરો.");
+    } else if (cropTarget.type === "banner") {
+      setNewBanImg(croppedDataUrl);
+      showToast("બેનર ફોટો ક્રોપ થઈ ગયો! સેવ કરો.");
+    } else if (cropTarget.type === "logo") {
+      setSettingsForm((current) => ({ ...current, logoMode: "image", logoUrl: croppedDataUrl }));
+      showToast("સ્ટોર લોગો ક્રોપ થઈ ગયો! સેટિંગ્સ સેવ કરો.");
+    } else if (cropTarget.type === "promo") {
+      setSettingsForm((current) => ({ ...current, promoImageUrl: croppedDataUrl }));
+      showToast("ઓફર બેનર ક્રોપ થઈ ગયો! સેટિંગ્સ સેવ કરો.");
+    }
+    setCropModalOpen(false);
+  };
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -318,10 +374,12 @@ export default function VisualAdminProtectedPage() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingProduct) return;
     if (!formNameGu.trim()) {
       showToast("નામ લખવું જરૂરી છે!");
       return;
     }
+    setIsSavingProduct(true);
     const unitsArr = formUnits.split(",").map((u) => u.trim()).filter(Boolean);
     const targetId = editingProduct ? editingProduct.id : "p_" + Date.now();
     const finalPhoto = formPhotoUrl.trim() || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=60";
@@ -354,6 +412,8 @@ export default function VisualAdminProtectedPage() {
     } catch (err) {
       console.error(err);
       showToast("સેવ કરવામાં ભૂલ આવી!");
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
@@ -1016,9 +1076,17 @@ export default function VisualAdminProtectedPage() {
 
         {/* Product Grid */}
         {loading ? (
-          <div role="status" className="flex min-h-48 flex-col items-center justify-center gap-4 rounded-2xl border border-[#1f2e4d] bg-[#0c1322]/70 py-12 text-sm text-slate-400">
-            <span className="h-8 w-8 animate-spin rounded-full border-2 border-orange-400/30 border-t-orange-400" />
-            સામાન લોડ થાય છે...
+          <div role="status" aria-label="Loading products" className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">
+            {Array.from({ length: 8 }, (_, index) => (
+              <div key={index} className="overflow-hidden rounded-2xl border border-[#263653] bg-[#111c32] p-3 space-y-3">
+                <div className="skeleton-shimmer-dark aspect-[4/3] rounded-xl w-full" />
+                <div className="space-y-2">
+                  <div className="skeleton-shimmer-dark h-4 w-3/4 rounded" />
+                  <div className="skeleton-shimmer-dark h-3 w-1/2 rounded" />
+                  <div className="skeleton-shimmer-dark h-9 w-full rounded-xl mt-2" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           filteredProducts.length > 0 ? (
@@ -1204,10 +1272,78 @@ export default function VisualAdminProtectedPage() {
               <div><label className="mb-1.5 block text-xs font-bold text-slate-300">Original price (sale compare)</label><input type="number" min="0" value={formOriginalPrice} onChange={(event) => setFormOriginalPrice(event.target.value)} className="w-full rounded-xl border border-[#34445f] bg-[#0a111f] px-3 py-3 text-sm text-white" /></div>
               <label className="flex min-h-11 items-center justify-between rounded-xl border border-[#34445f] bg-[#0a111f] px-3 py-2 text-xs font-bold text-slate-300">Mark as special offer<input type="checkbox" checked={formOffer} onChange={(event) => setFormOffer(event.target.checked)} className="h-5 w-5 accent-amber-500" /></label>
 
-              <div className="space-y-2 sm:col-span-2">
-                <span className="mb-1.5 block text-xs font-bold text-slate-300">Product image</span>
-                <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-sm font-bold text-amber-200"><ImagePlus size={17} />Upload Image<input type="file" accept="image/*" onChange={handleProductImageUpload} className="sr-only" /></label>
-                {formPhotoUrl && <div className="flex items-center gap-3"><img src={formPhotoUrl} alt="Product image preview" className="h-20 w-24 rounded-xl border border-[#34445f] object-cover" /><span className="text-xs text-emerald-300">Image ready · saved with product</span><button type="button" onClick={() => setFormPhotoUrl("")} className="text-xs font-bold text-rose-300">Remove</button></div>}
+              <div className="space-y-2.5 sm:col-span-2 rounded-2xl border border-[#263653] bg-[#0c1322] p-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="block text-xs font-bold text-slate-200">પ્રોડક્ટ ફોટો (Product Image - 1:1)</span>
+                  {formPhotoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setFormPhotoUrl("")}
+                      className="text-xs font-bold text-rose-400 hover:text-rose-300 transition"
+                    >
+                      Remove photo
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/20 px-3.5 py-2 text-xs font-bold text-amber-200 transition active:scale-95 shadow-sm">
+                    <ImagePlus size={16} />
+                    {formPhotoUrl ? "Change Photo (ફોટો બદલો)" : "Upload Image (ફોટો અપલોડ કરો)"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) {
+                          openCropperForFile(file, {
+                            type: "product",
+                            aspectRatio: 1,
+                            outputWidth: 600,
+                            outputHeight: 600,
+                            title: "પ્રોડક્ટ ફોટો એડજસ્ટ કરો (1:1 Product Image)",
+                          });
+                        }
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+
+                  {formPhotoUrl && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openCropperForUrl(formPhotoUrl, {
+                          type: "product",
+                          aspectRatio: 1,
+                          outputWidth: 600,
+                          outputHeight: 600,
+                          title: "પ્રોડક્ટ ફોટો એડજસ્ટ કરો (1:1 Product Image)",
+                        })
+                      }
+                      className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3.5 py-2 text-xs font-bold text-slate-200 transition"
+                    >
+                      <Pencil size={13} className="text-orange-400" />
+                      Adjust & Crop (ક્રોપ કરો)
+                    </button>
+                  )}
+                </div>
+
+                {formPhotoUrl && (
+                  <div className="flex items-center gap-3.5 pt-1">
+                    <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 border-orange-500/50 shadow-md">
+                      <img src={formPhotoUrl} alt="Product image preview" className="h-full w-full object-cover" />
+                      <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[8px] font-bold text-orange-300">1:1</span>
+                    </div>
+                    <div className="text-xs space-y-0.5">
+                      <span className="text-emerald-400 font-bold flex items-center gap-1">
+                        <Check size={14} /> ફોટો તૈયાર છે (Ready)
+                      </span>
+                      <p className="text-[11px] text-slate-400">સાચવવા માટે નીચે &ldquo;સાચવો&rdquo; બટન દબાવો.</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-4 rounded-xl border border-[#34445f] bg-[#0a111f] p-3 sm:col-span-2">
@@ -1294,13 +1430,82 @@ export default function VisualAdminProtectedPage() {
                   placeholder="નાની વિગત (દા.ત. ૧૫ કિલો ડબ્બા પર આકર્ષક ભાવ)"
                   className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                 />
-                <input
-                  type="url"
-                  value={newBanImg}
-                  onChange={(e) => setNewBanImg(e.target.value)}
-                  placeholder="ફોટો વેબ URL"
-                  className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
-                />
+                {/* Banner Image Upload & Adjust */}
+                <div className="space-y-2 rounded-2xl border border-[#263653] bg-[#111c32] p-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200">બેનર ફોટો (16:9 Banner Image)</span>
+                    {newBanImg && (
+                      <button
+                        type="button"
+                        onClick={() => setNewBanImg("")}
+                        className="text-xs font-bold text-rose-400 hover:text-rose-300"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/20 px-3.5 py-2 text-xs font-bold text-amber-200 transition active:scale-95 shadow-sm">
+                      <ImagePlus size={15} />
+                      {newBanImg ? "Change Banner Photo" : "Upload Banner Image"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = "";
+                          if (file) {
+                            openCropperForFile(file, {
+                              type: "banner",
+                              aspectRatio: 16 / 9,
+                              outputWidth: 1200,
+                              outputHeight: 675,
+                              title: "બેનર ફોટો એડજસ્ટ કરો (16:9 Banner)",
+                            });
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                    </label>
+
+                    {newBanImg && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openCropperForUrl(newBanImg, {
+                            type: "banner",
+                            aspectRatio: 16 / 9,
+                            outputWidth: 1200,
+                            outputHeight: 675,
+                            title: "બેનર ફોટો એડજસ્ટ કરો (16:9 Banner)",
+                          })
+                        }
+                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3.5 py-2 text-xs font-bold text-slate-200 transition"
+                      >
+                        <Pencil size={13} className="text-orange-400" />
+                        Adjust & Crop
+                      </button>
+                    )}
+                  </div>
+
+                  {newBanImg && (
+                    <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-[#34445f] bg-black/40 mt-1">
+                      <img src={newBanImg} alt="Banner preview" className="w-full h-full object-cover" />
+                      <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-mono text-orange-300">
+                        16:9 Preview
+                      </span>
+                    </div>
+                  )}
+
+                  <input
+                    type="url"
+                    value={newBanImg.startsWith("data:") ? "" : newBanImg}
+                    onChange={(e) => setNewBanImg(e.target.value)}
+                    placeholder="અથવા વેબ ઈમેજ URL દાખલ કરો (Optional Image URL)"
+                    className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
+                  />
+                </div>
                 <label className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs font-semibold text-slate-200">
                   <span>હોમપેજ સ્લાઇડરમાં દેખાડો</span>
                   <input
@@ -1471,15 +1676,45 @@ export default function VisualAdminProtectedPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <label className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition">
                             <ImagePlus size={15} className="text-orange-400" />
-                            {isUploadingLogo ? "Preparing image…" : "Upload logo image"}
+                            {settingsForm.logoUrl ? "Change logo image" : "Upload logo image"}
                             <input
                               type="file"
                               accept="image/*"
-                              onChange={handleLogoUpload}
-                              disabled={isUploadingLogo}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = "";
+                                if (file) {
+                                  openCropperForFile(file, {
+                                    type: "logo",
+                                    aspectRatio: 1,
+                                    outputWidth: 400,
+                                    outputHeight: 400,
+                                    title: "સ્ટોર લોગો એડજસ્ટ કરો (1:1 Store Logo)",
+                                  });
+                                }
+                              }}
                               className="sr-only"
                             />
                           </label>
+
+                          {settingsForm.logoUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openCropperForUrl(settingsForm.logoUrl, {
+                                  type: "logo",
+                                  aspectRatio: 1,
+                                  outputWidth: 400,
+                                  outputHeight: 400,
+                                  title: "સ્ટોર લોગો એડજસ્ટ કરો (1:1 Store Logo)",
+                                })
+                              }
+                              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition"
+                            >
+                              <Pencil size={13} className="text-orange-400" />
+                              Adjust & Crop
+                            </button>
+                          )}
 
                           {settingsForm.logoUrl && (
                             <button
@@ -1637,6 +1872,32 @@ export default function VisualAdminProtectedPage() {
               </section>
             </div>
           </section>
+        </div>
+      )}
+
+      {/* Image Crop & Position Adjust Modal */}
+      {cropModalOpen && cropTarget && (
+        <ImageCropModal
+          isOpen={cropModalOpen}
+          onClose={() => setCropModalOpen(false)}
+          imageSrc={cropImageSrc}
+          aspectRatio={cropTarget.aspectRatio}
+          title={cropTarget.title}
+          outputWidth={cropTarget.outputWidth}
+          outputHeight={cropTarget.outputHeight}
+          onConfirm={handleCropConfirm}
+        />
+      )}
+
+      {/* Polished Backdrop Blur Spinner Overlay */}
+      {(isSavingProduct || isSavingBanner || isSavingSettings || isUploadingLogo) && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/70 backdrop-blur-sm text-white">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-orange-500/20 bg-[#0f172a] p-6 shadow-2xl">
+            <div className="h-10 w-10 animate-spin rounded-full border-3 border-orange-500/20 border-t-orange-500" />
+            <p className="text-xs font-bold text-slate-200">
+              {isSavingProduct ? "પ્રોડક્ટ સેવ થાય છે…" : isSavingBanner ? "બેનર સેવ થાય છે…" : isSavingSettings ? "સેટિંગ્સ સેવ થાય છે…" : "ફોટો પ્રોસેસ થાય છે…"}
+            </p>
+          </div>
         </div>
       )}
     </div>
