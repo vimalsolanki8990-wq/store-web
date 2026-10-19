@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { db } from "./firebase";
 import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import { toPng } from "html-to-image";
-import { Camera, Check, CheckCircle2, ExternalLink, FolderOpen, Heart, Home, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
+import { Camera, Check, CheckCircle2, ExternalLink, FileDown, FolderOpen, Heart, Home, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, StoreCategory, StoreSettings } from "./store-config";
 
 interface Product {
@@ -129,6 +129,7 @@ export default function CustomerStorePage() {
   const [speechError, setSpeechError] = useState("");
   const [isReceiptOpen, setReceiptOpen] = useState(false);
   const [isPreparingReceipt, setPreparingReceipt] = useState(false);
+  const [receiptTimestamp, setReceiptTimestamp] = useState("");
   const [viewCount, setViewCount] = useState(0);
   const receiptRef = useRef<HTMLDivElement>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -489,6 +490,10 @@ export default function CustomerStorePage() {
 
     try {
       setPreparingReceipt(true);
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-IN");
+      const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+      setReceiptTimestamp(`${dateStr} · ${timeStr}`);
       setConfetti(true);
       window.setTimeout(() => setConfetti(false), 1800);
       setReceiptOpen(true);
@@ -501,10 +506,27 @@ export default function CustomerStorePage() {
     }
   };
 
+  const downloadReceipt = async () => {
+    if (!receiptRef.current) return;
+    try {
+      const image = await toPng(receiptRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+      });
+      const download = document.createElement("a");
+      download.href = image;
+      download.download = "jay-vachhraj-bill.png";
+      download.click();
+      showToast("બિલ ઇમેજ ડાઉનલોડ થઈ ગઈ!");
+    } catch (error) {
+      console.error("Receipt download failed:", error);
+      showToast("બિલ ડાઉનલોડ કરવામાં ભૂલ આવી.");
+    }
+  };
+
   const shareOrder = async () => {
     const total = Object.values(cart).reduce((sum, item) => sum + item.quantity * item.price, 0);
-    const details = Object.values(cart).map((item) => `• ${item.name} × ${item.quantity} — ₹${item.quantity * item.price}`).join("\n");
-    const message = `New order for ${storeSettings.storeName}\nCustomer: ${custName.trim()} (${custPhone.replace(/\D/g, "")})\n${custAddress.trim() ? `Area: ${custAddress.trim()}\n` : ""}Fulfilment: ${fulfillment === "pickup" ? "Store Pickup" : `Home Delivery — ${deliverySlot}`}\n${details}\n${cartDiscount > 0 ? `Savings: ₹${cartDiscount.toFixed(2)}\n` : ""}Total: ₹${total.toFixed(2)}`;
     const whatsappNumber = storeSettings.whatsappNumber.replace(/\D/g, "");
     const orderRecord = {
       customerName: custName.trim(),
@@ -523,17 +545,22 @@ export default function CustomerStorePage() {
       localStorage.setItem("jay-store-last-order", JSON.stringify(Object.values(cart)));
       setLastOrderAvailable(true);
       if (receiptRef.current) {
-        const image = await toPng(receiptRef.current, { cacheBust: true, pixelRatio: 2, backgroundColor: "#111827" });
+        // Ensure ONLY the receipt card element itself is captured on crisp white paper
+        const image = await toPng(receiptRef.current, { cacheBust: true, pixelRatio: 2, backgroundColor: "#ffffff" });
         const receiptBlob = await (await fetch(image)).blob();
-        const receiptFile = new File([receiptBlob], "jay-vachhraj-order.png", { type: "image/png" });
+        const receiptFile = new File([receiptBlob], "jay-vachhraj-bill.png", { type: "image/png" });
+
+        // Trigger Web Share API passing the clean image blob directly without adding trailing auto-generated text or links
         if (navigator.canShare?.({ files: [receiptFile] })) {
-          await navigator.share({ files: [receiptFile], title: `Order - ${storeSettings.storeName}`, text: message });
+          await navigator.share({ files: [receiptFile], title: "જય વછરાજ જનરલ સ્ટોર - બિલ" });
           setReceiptOpen(false);
           return;
         }
+
+        // Direct clean download if Web Share with files is unavailable
         const download = document.createElement("a");
         download.href = image;
-        download.download = "jay-vachhraj-order.png";
+        download.download = "jay-vachhraj-bill.png";
         download.click();
       }
     } catch (error) {
@@ -542,9 +569,13 @@ export default function CustomerStorePage() {
         alert("Your order could not be securely saved. Please contact the store or try again later.");
         return;
       }
-      console.warn("Image sharing is not available; opening WhatsApp text share instead.", error);
+      console.warn("Image sharing error:", error);
     }
-    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+
+    // Direct WhatsApp fallback with clean details and NO trailing links or promotional watermarks
+    const cleanDetails = Object.values(cart).map((item, idx) => `${idx + 1}. ${item.name} × ${item.quantity} = ₹${(item.quantity * item.price).toFixed(2)}`).join("\n");
+    const cleanMessage = `*જય વછરાજ જનરલ સ્ટોર - બિલ*\nગ્રાહક: ${custName.trim()} (${custPhone.replace(/\D/g, "")})\n${custAddress.trim() ? `સરનામું: ${custAddress.trim()}\n` : ""}ડિલિવરી: ${fulfillment === "pickup" ? "સ્ટોર પિકઅપ" : `હોમ ડિલિવરી (${deliverySlot})`}\n\n${cleanDetails}\n\n*કુલ રકમ: ₹${total.toFixed(2)}*`;
+    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(cleanMessage)}`, "_blank", "noopener,noreferrer");
     setReceiptOpen(false);
   };
 
@@ -1121,78 +1152,220 @@ export default function CustomerStorePage() {
         </div>
       </footer>
 
-      {/* Order Receipt Preview Modal - Clean Light */}
+      {/* Realistic Thermal Receipt Modal */}
       {isReceiptOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <section role="dialog" aria-modal="true" aria-labelledby="receipt-title" className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
-            <header className="flex items-center justify-between border-b border-slate-200 px-4 py-4 bg-slate-50">
-              <h2 id="receipt-title" className="font-black text-slate-900">Order receipt preview</h2>
-              <button onClick={() => setReceiptOpen(false)} aria-label="Close receipt preview" className="rounded-lg p-2 text-slate-500 hover:bg-slate-200"><X size={20} /></button>
+          <section role="dialog" aria-modal="true" aria-labelledby="receipt-title" className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3.5 bg-slate-50">
+              <h2 id="receipt-title" className="font-black text-sm text-slate-900">
+                બિલ પ્રીવ્યૂ (Bill Receipt)
+              </h2>
+              <button onClick={() => setReceiptOpen(false)} aria-label="Close receipt preview" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 transition">
+                <X size={18} />
+              </button>
             </header>
-            <div className="max-h-[65vh] overflow-auto bg-slate-100 p-3 sm:p-5">
-              <article ref={receiptRef} className="mx-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 text-slate-800 shadow-sm sm:p-6">
-                <header className="flex items-center gap-3 border-b border-dashed border-slate-300 pb-4">
-                  {storeSettings.logoMode === "image" && storeSettings.logoUrl ? (
-                    <img src={storeSettings.logoUrl} alt="Store logo" className="h-12 w-12 rounded-xl object-cover" />
-                  ) : (
-                    <span className="grid h-12 w-12 place-items-center rounded-xl text-white bg-gradient-to-tr from-orange-600 to-amber-500">
-                      <StoreLogoIcon size={24} />
-                    </span>
-                  )}
-                  <div className="min-w-0">
-                    <h3 className="truncate text-base font-black text-slate-900">{storeSettings.storeName}</h3>
-                    <p className="text-xs text-slate-500">{storeSettings.address}</p>
-                  </div>
-                </header>
-                <div className="flex items-center justify-between py-4">
-                  <div>
-                    <h4 className="text-sm font-black uppercase tracking-widest text-orange-600">Order receipt</h4>
-                    <p className="mt-1 text-[11px] text-slate-500">{new Date().toLocaleDateString("en-IN")}</p>
-                  </div>
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-                    Confirmation preview
-                  </span>
+
+            <div className="max-h-[68vh] overflow-auto bg-stone-100 p-4 sm:p-6 flex justify-center">
+              {/* Realistic Thermal Paper Slip */}
+              <article
+                ref={receiptRef}
+                className="w-full max-w-[340px] sm:max-w-[360px] bg-white p-5 sm:p-6 text-slate-900 shadow-xl border border-slate-200/90 font-mono text-xs leading-normal select-none"
+                style={{
+                  backgroundColor: "#ffffff",
+                  color: "#0f172a",
+                }}
+              >
+                {/* Header */}
+                <div className="text-center space-y-1">
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
+                    જય વછરાજ જનરલ સ્ટોર
+                  </h3>
+                  <p className="text-xs font-semibold text-slate-700">
+                    ઝાંઝમેર
+                  </p>
+                  <p className="text-[11px] font-medium text-slate-600">
+                    સંપર્ક: +{storeSettings.whatsappNumber ? storeSettings.whatsappNumber.replace(/\D/g, "") : "919876543210"}
+                  </p>
+                  <p className="text-[10px] text-slate-500 pt-0.5">
+                    તારીખ & સમય: {receiptTimestamp || `${new Date().toLocaleDateString("en-IN")} · ${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}`}
+                  </p>
                 </div>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl bg-slate-50 p-3 text-xs border border-slate-200">
-                  <dt className="text-slate-500">Customer</dt><dd className="text-right font-semibold text-slate-900">{custName.trim()}</dd>
-                  <dt className="text-slate-500">Phone</dt><dd className="text-right font-semibold text-slate-900">{custPhone.replace(/\D/g, "")}</dd>
-                  {custAddress.trim() && <><dt className="text-slate-500">Address</dt><dd className="text-right font-semibold text-slate-900">{custAddress.trim()}</dd></>}
-                  <dt className="text-slate-500">Fulfilment</dt><dd className="text-right font-semibold text-slate-900">{fulfillment === "pickup" ? "Store pickup" : `Home delivery · ${deliverySlot}`}</dd>
-                </dl>
-                <div className="mt-4">
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-slate-200 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                    <span>Item</span><span>Qty</span><span className="text-right">Amount</span>
-                  </div>
-                  <ul className="divide-y divide-slate-100">
-                    {Object.values(cart).map((item) => (
-                      <li key={item.id} className="grid grid-cols-[1fr_auto_auto] items-start gap-2 py-2.5 text-xs">
-                        <span className="font-semibold text-slate-900">{item.name}<span className="mt-0.5 block text-[10px] font-normal text-slate-500">₹{item.price.toFixed(2)} each</span></span>
-                        <span className="text-slate-600">×{item.quantity}</span>
-                        <span className="text-right font-bold text-slate-900">₹{(item.price * item.quantity).toFixed(2)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="mt-2 space-y-2 border-t border-slate-200 pt-3 text-xs">
-                  {cartDiscount > 0 && <div className="flex justify-between text-emerald-600 font-semibold"><span>Offers & savings</span><span>−₹{cartDiscount.toFixed(2)}</span></div>}
-                  <div className="flex justify-between text-base font-black text-slate-900"><span>Payable total</span><span>₹{cartTotal.toFixed(2)}</span></div>
-                </div>
-                {storeSettings.upiId && (
-                  <div className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <img src={storeSettings.upiQrUrl || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`upi://pay?pa=${storeSettings.upiId}&pn=${storeSettings.upiName}&am=${cartTotal.toFixed(2)}&cu=INR`)}`} alt="Store UPI QR code" className="h-20 w-20 rounded bg-white object-contain p-1 border border-slate-200" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-slate-900">Pay via UPI</p>
-                      <p className="truncate text-[10px] text-slate-500">{storeSettings.upiId}</p>
-                      <a href={`upi://pay?pa=${encodeURIComponent(storeSettings.upiId)}&pn=${encodeURIComponent(storeSettings.upiName)}&am=${cartTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Store order")}`} className="mt-2 inline-flex rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-[10px] font-bold text-white shadow-xs">Pay ₹{cartTotal.toFixed(2)}</a>
+
+                {/* Customer Info (if available) */}
+                {(custName.trim() || custPhone.trim()) && (
+                  <>
+                    <div className="border-b border-dashed border-slate-300 my-2.5" />
+                    <div className="text-[11px] space-y-0.5">
+                      {custName.trim() && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">ગ્રાહક:</span>
+                          <span className="font-bold text-slate-800">{custName.trim()}</span>
+                        </div>
+                      )}
+                      {custPhone.trim() && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">મોબાઇલ:</span>
+                          <span className="font-bold text-slate-800">{custPhone.replace(/\D/g, "")}</span>
+                        </div>
+                      )}
+                      {custAddress.trim() && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">સરનામું:</span>
+                          <span className="font-semibold text-slate-800 truncate max-w-[180px]">{custAddress.trim()}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">ઓર્ડર પ્રકાર:</span>
+                        <span className="font-semibold text-slate-800">
+                          {fulfillment === "pickup" ? "સ્ટોર પિકઅપ" : `હોમ ડિલિવરી (${deliverySlot})`}
+                        </span>
+                      </div>
                     </div>
+                  </>
+                )}
+
+                {/* Divider Line */}
+                <div className="border-b border-dashed border-slate-400 my-2.5" />
+
+                {/* Items Table */}
+                <div className="w-full">
+                  <div className="grid grid-cols-[1.5rem_1fr_auto] gap-2 pb-1.5 font-bold border-b border-dashed border-slate-400 text-[11px] uppercase text-slate-800">
+                    <span>નં.</span>
+                    <span>આઇટમ (Item)</span>
+                    <span className="text-right">રકમ (₹)</span>
+                  </div>
+
+                  <div className="divide-y divide-dashed divide-slate-200 py-1">
+                    {Object.values(cart).map((item, index) => {
+                      const product = products.find((p) => p.id === item.id);
+                      const nameGu = product?.nameGu || item.name;
+                      const nameEn = product?.nameEn && product.nameEn !== nameGu ? product.nameEn : "";
+                      const itemDisplayName = nameEn ? `${nameGu} (${nameEn})` : nameGu;
+                      const unitLabel = product?.units?.[0] || "";
+
+                      return (
+                        <div key={item.id} className="grid grid-cols-[1.5rem_1fr_auto] gap-2 py-1.5 text-xs items-start">
+                          <span className="text-slate-500 font-semibold">{index + 1}.</span>
+                          <div className="min-w-0 pr-1">
+                            <span className="font-bold text-slate-900 block leading-tight">{itemDisplayName}</span>
+                            <span className="text-[10px] text-slate-500 block mt-0.5">
+                              {item.quantity} {unitLabel ? `${unitLabel} ` : ""}× ₹{item.price.toFixed(2)}
+                            </span>
+                          </div>
+                          <span className="text-right font-bold text-slate-900 whitespace-nowrap">
+                            ₹{(item.price * item.quantity).toFixed(2)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Summary Section */}
+                <div className="border-b-2 border-dashed border-slate-800 my-2" />
+
+                {cartDiscount > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-semibold text-[11px] py-0.5">
+                    <span>બચત (Discount):</span>
+                    <span>−₹{cartDiscount.toFixed(2)}</span>
                   </div>
                 )}
-                <p className="mt-4 text-center text-[10px] text-slate-500">Thank you for shopping with us.</p>
+
+                {/* Total Amount (કુલ રકમ) in Bold */}
+                <div className="flex justify-between items-center text-sm sm:text-base font-black text-slate-950 py-1.5 border-t border-b border-slate-900 my-1">
+                  <span>કુલ રકમ (Total Amount):</span>
+                  <span className="text-base sm:text-lg">₹{cartTotal.toFixed(2)}</span>
+                </div>
+
+                <div className="text-[10px] text-slate-500 text-right mt-1">
+                  કુલ આઇટમ: {totalCartCount} નંગ
+                </div>
+
+                {/* Divider Line */}
+                <div className="border-b border-dashed border-slate-400 my-3" />
+
+                {/* Footer: Barcode placeholder & Simple thank you text */}
+                <div className="flex flex-col items-center justify-center pt-1 text-center">
+                  <svg className="w-44 h-9 max-w-full" viewBox="0 0 200 40" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="200" height="40" fill="#ffffff" />
+                    <rect x="10" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="14" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="17" y="0" width="3" height="34" fill="#0f172a" />
+                    <rect x="22" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="25" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="29" y="0" width="4" height="34" fill="#0f172a" />
+                    <rect x="35" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="38" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="42" y="0" width="3" height="34" fill="#0f172a" />
+                    <rect x="47" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="51" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="54" y="0" width="4" height="34" fill="#0f172a" />
+                    <rect x="60" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="64" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="67" y="0" width="3" height="34" fill="#0f172a" />
+                    <rect x="72" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="76" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="79" y="0" width="4" height="34" fill="#0f172a" />
+                    <rect x="85" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="89" y="0" width="3" height="34" fill="#0f172a" />
+                    <rect x="94" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="97" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="101" y="0" width="4" height="34" fill="#0f172a" />
+                    <rect x="107" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="110" y="0" width="3" height="34" fill="#0f172a" />
+                    <rect x="115" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="119" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="122" y="0" width="4" height="34" fill="#0f172a" />
+                    <rect x="128" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="132" y="0" width="3" height="34" fill="#0f172a" />
+                    <rect x="137" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="140" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="144" y="0" width="4" height="34" fill="#0f172a" />
+                    <rect x="150" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="153" y="0" width="3" height="34" fill="#0f172a" />
+                    <rect x="158" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="162" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="165" y="0" width="4" height="34" fill="#0f172a" />
+                    <rect x="171" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="175" y="0" width="3" height="34" fill="#0f172a" />
+                    <rect x="180" y="0" width="1" height="34" fill="#0f172a" />
+                    <rect x="183" y="0" width="2" height="34" fill="#0f172a" />
+                    <rect x="187" y="0" width="2" height="34" fill="#0f172a" />
+                  </svg>
+                  <span className="font-mono text-[9px] tracking-widest text-slate-500 uppercase mt-0.5">
+                    *JVGS-BILL*
+                  </span>
+
+                  <p className="font-bold text-xs text-slate-800 mt-1.5">
+                    પધારવા બદલ આભાર!
+                  </p>
+                </div>
               </article>
             </div>
-            <div className="flex flex-col gap-2 p-4 sm:flex-row bg-slate-50 border-t border-slate-200">
-              <button onClick={() => setReceiptOpen(false)} className="min-h-11 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 transition">Back to order</button>
-              <button onClick={shareOrder} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-black text-white bg-orange-500 hover:bg-orange-600 shadow-sm transition"><MessageCircle size={18} /> Share order</button>
+
+            {/* Action Buttons (outside receipt card) */}
+            <div className="flex flex-col sm:flex-row gap-2.5 p-4 bg-slate-50 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setReceiptOpen(false)}
+                className="min-h-11 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs sm:text-sm font-bold text-slate-700 hover:bg-slate-100 transition active:scale-95"
+              >
+                Back to Cart
+              </button>
+              <button
+                type="button"
+                onClick={downloadReceipt}
+                className="min-h-11 flex-1 rounded-xl border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-900 px-4 py-2 text-xs sm:text-sm font-bold transition active:scale-95 flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                <FileDown size={16} /> Download Bill
+              </button>
+              <button
+                type="button"
+                onClick={shareOrder}
+                className="min-h-11 flex-1 rounded-xl px-4 py-2 text-xs sm:text-sm font-black text-white bg-orange-500 hover:bg-orange-600 shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                <Share2 size={16} /> Share Receipt
+              </button>
             </div>
           </section>
         </div>
