@@ -690,7 +690,7 @@ export default function CustomerStorePage() {
           </div>
         )}
 
-        {/* Circular Category Strip: Story-style circles with subtle borders and labels */}
+        {/* Category buttons: rounded-2xl bg-white shadow-sm border border-orange-100 p-2 flex flex-col items-center */}
         <div id="categories-section" className="mt-4 sm:mt-6 mb-6">
           <div className="flex items-center justify-between mb-3 px-1">
             <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -700,7 +700,7 @@ export default function CustomerStorePage() {
               {filteredProducts.length} items
             </span>
           </div>
-          <div className="flex items-start gap-4 sm:gap-6 overflow-x-auto pb-2 pt-1 no-scrollbar scroll-smooth">
+          <div className="flex items-start gap-3 sm:gap-4 overflow-x-auto pb-2 pt-1 no-scrollbar scroll-smooth">
             {allCategories.map((cat) => {
               const isSel = activeCategory === cat.id;
               const CategoryIcon = CATEGORY_ICONS[cat.icon] ?? Sparkles;
@@ -712,22 +712,20 @@ export default function CustomerStorePage() {
                     setActiveCategory(cat.id);
                     setFavoritesOnly(false);
                   }}
-                  className="flex flex-col items-center gap-1.5 shrink-0 group focus:outline-none"
+                  className={`rounded-2xl shadow-sm p-2 flex flex-col items-center justify-center shrink-0 min-w-20 sm:min-w-24 transition duration-150 active:scale-95 border ${
+                    isSel
+                      ? "bg-orange-500 text-white border-orange-500 ring-2 ring-orange-500/20"
+                      : "bg-white border-orange-100 text-slate-700 hover:border-orange-200 hover:bg-orange-50/40"
+                  }`}
                 >
                   <div
-                    className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 select-none ${
-                      isSel
-                        ? "bg-orange-500 text-white ring-3 ring-orange-500 ring-offset-2 ring-offset-[#fbf9f5] shadow-md scale-105"
-                        : "bg-white text-slate-700 border-2 border-stone-200 hover:border-orange-300 hover:bg-orange-50/40 shadow-2xs group-hover:scale-102"
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition ${
+                      isSel ? "bg-white/20 text-white" : "bg-orange-50 text-orange-600"
                     }`}
                   >
-                    <CategoryIcon size={24} aria-hidden="true" />
+                    <CategoryIcon size={20} aria-hidden="true" />
                   </div>
-                  <span
-                    className={`text-[11px] sm:text-xs font-semibold text-center whitespace-nowrap transition-colors max-w-[80px] truncate ${
-                      isSel ? "text-orange-600 font-bold" : "text-slate-700 group-hover:text-slate-900"
-                    }`}
-                  >
+                  <span className="text-[11px] font-bold text-center whitespace-nowrap truncate max-w-[72px]">
                     {cat.name}
                   </span>
                 </button>
@@ -736,31 +734,31 @@ export default function CustomerStorePage() {
           </div>
         </div>
 
-        {/* Deal of the Day Banner: Soft rounded card with 10% Offer badge */}
-        <section className="mt-4 sm:mt-6 mb-6 rounded-3xl overflow-hidden border border-amber-200/80 bg-gradient-to-br from-amber-50/90 via-orange-50/50 to-amber-100/60 p-4 sm:p-6 shadow-xs relative max-h-52 sm:max-h-72 flex flex-col justify-center">
+        {/* Hero Banner: rounded-3xl bg-gradient-to-r from-amber-50 to-orange-100 border border-orange-200 p-6 shadow-sm */}
+        <section className="mt-4 sm:mt-6 mb-6 rounded-3xl bg-gradient-to-r from-amber-50 to-orange-100 border border-orange-200 p-6 shadow-sm relative overflow-hidden flex flex-col justify-center">
           <div className="relative z-10 max-w-lg">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-black uppercase tracking-wider shadow-2xs">
-                <Sparkles size={11} /> 10% Offer
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500 text-white text-[11px] font-black uppercase tracking-wider shadow-xs">
+                <Sparkles size={12} /> 10% Offer
               </span>
               <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
                 Deal of the Day
               </span>
             </div>
-            <h2 className="text-base sm:text-xl font-black text-slate-900 leading-snug">
+            <h2 className="text-lg sm:text-2xl font-black text-slate-900 leading-snug">
               100% Pure Groundnut Oil & Seasonal Spices
             </h2>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1 line-clamp-2 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-700 mt-1.5 line-clamp-2 leading-relaxed">
               Freshly pressed pure groundnut oil and seasonal spices direct from Zanzmer farmers at wholesale quality rates.
             </p>
-            <div className="mt-3 flex items-center gap-2.5">
+            <div className="mt-4 flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => {
                   setActiveCategory("તેલ-ઘી");
                   setFavoritesOnly(false);
                 }}
-                className="px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-xs font-bold shadow-xs transition"
+                className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-xs font-bold shadow-xs transition"
               >
                 Shop Pure Oil
               </button>
@@ -770,13 +768,13 @@ export default function CustomerStorePage() {
                   setActiveCategory("મસાલા");
                   setFavoritesOnly(false);
                 }}
-                className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold shadow-2xs transition"
+                className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 border border-orange-200 text-amber-950 text-xs font-bold shadow-2xs transition"
               >
                 View Seasonal Spices
               </button>
             </div>
           </div>
-          <div className="absolute -right-6 -bottom-6 w-36 h-36 sm:w-52 sm:h-52 bg-gradient-to-tr from-amber-300/30 to-orange-400/20 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute -right-6 -bottom-6 w-40 h-40 sm:w-56 sm:h-56 bg-gradient-to-tr from-amber-300/40 to-orange-400/20 rounded-full blur-2xl pointer-events-none" />
         </section>
 
         {lastOrderAvailable && (
@@ -803,11 +801,11 @@ export default function CustomerStorePage() {
           </aside>
         )}
 
-        {/* 6. Clean Product Cards (2-column on mobile, 4-column on desktop) */}
+        {/* Product Grid: grid grid-cols-2 md:grid-cols-4 gap-4 p-4 */}
         {loading ? (
-          <div role="status" aria-label="Loading products" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div role="status" aria-label="Loading products" className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
             {Array.from({ length: 8 }, (_, index) => (
-              <div key={index} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div key={index} className="overflow-hidden rounded-2xl border border-orange-100 bg-white">
                 <div className="skeleton-shimmer aspect-[4/3]" />
                 <div className="space-y-3 p-3">
                   <div className="skeleton-shimmer h-4 w-3/4 rounded" />
@@ -819,7 +817,7 @@ export default function CustomerStorePage() {
           </div>
         ) : (
           filteredProducts.length ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
               {filteredProducts.map((item) => {
                 const isAvailable = item.inStock && item.stockCount > 0;
                 const isFavorite = favorites.includes(item.id);
@@ -829,7 +827,7 @@ export default function CustomerStorePage() {
                 return (
                   <div
                     key={item.id}
-                    className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden flex flex-col justify-between hover:shadow-md hover:border-slate-300 transition-all duration-200 shadow-xs relative group"
+                    className="bg-white border border-orange-100 rounded-2xl overflow-hidden flex flex-col justify-between hover:shadow-md hover:border-orange-200 transition-all duration-200 shadow-sm relative group"
                   >
                     <div className="relative w-full aspect-[4/3] bg-slate-50 overflow-hidden">
                       <img
@@ -1168,7 +1166,7 @@ export default function CustomerStorePage() {
       {/* 7. Floating Glassmorphic Bottom Dock: Translucent nav bar */}
       <nav
         aria-label="Bottom Navigation Dock"
-        className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md glass-dock rounded-2xl px-2 py-1.5 shadow-xl border border-slate-200/80"
+        className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md glass-dock rounded-2xl px-3 py-2 shadow-lg border border-orange-100/70"
       >
         <div className="flex items-center justify-around">
           <button
