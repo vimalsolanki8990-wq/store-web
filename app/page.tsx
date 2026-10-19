@@ -927,12 +927,12 @@ export default function CustomerStorePage() {
         {loading ? (
           <div role="status" aria-label="Loading products" className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
             {Array.from({ length: 8 }, (_, index) => (
-              <div key={index} className="overflow-hidden rounded-2xl border border-orange-100 bg-white">
+              <div key={index} className="overflow-hidden rounded-2xl border border-orange-100 bg-white flex flex-col">
                 <div className="skeleton-shimmer aspect-[4/3]" />
-                <div className="space-y-3 p-3">
+                <div className="p-2.5 sm:p-3 space-y-2 flex flex-col items-center w-full">
                   <div className="skeleton-shimmer h-4 w-3/4 rounded" />
-                  <div className="skeleton-shimmer h-4 w-1/3 rounded" />
-                  <div className="skeleton-shimmer h-9 w-full rounded-xl" />
+                  <div className="skeleton-shimmer h-3.5 w-1/2 rounded" />
+                  <div className="skeleton-shimmer h-8 w-full rounded-xl mt-0.5" />
                 </div>
               </div>
             ))}
@@ -949,7 +949,7 @@ export default function CustomerStorePage() {
                 return (
                   <div
                     key={item.id}
-                    className="bg-white border border-orange-100 rounded-2xl overflow-hidden flex flex-col justify-between hover:shadow-md hover:border-orange-200 transition-all duration-200 shadow-sm relative group"
+                    className="bg-white border border-orange-100 rounded-2xl overflow-hidden flex flex-col hover:shadow-md hover:border-orange-200 transition-all duration-200 shadow-xs relative group"
                   >
                     <div className="relative w-full aspect-[4/3] bg-slate-50 overflow-hidden">
                       <img
@@ -960,6 +960,17 @@ export default function CustomerStorePage() {
                           !isAvailable ? "grayscale opacity-50" : ""
                         }`}
                       />
+
+                      {/* Animated 'SPECIAL OFFER' Ribbon Badge with Golden Sparkle Accents */}
+                      {isAvailable && (item.offer || item.originalPrice > item.price) && (
+                        <div className="absolute top-2 left-2 z-10 offer-badge-pulse">
+                          <div className="glint-effect relative inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-md shadow-red-950/25 border border-amber-300/40 select-none">
+                            <span className="sparkle-icon text-amber-200 text-[9px] sm:text-[10px] leading-none">✦</span>
+                            <span className="font-black text-[8px] sm:text-[9.5px] tracking-wider uppercase drop-shadow-xs">SPECIAL OFFER</span>
+                            <span className="sparkle-icon-delayed text-amber-200 text-[9px] sm:text-[10px] leading-none">✦</span>
+                          </div>
+                        </div>
+                      )}
 
                       {!isAvailable && (
                         <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow z-10">
@@ -973,88 +984,87 @@ export default function CustomerStorePage() {
                           onClick={() => toggleFavorite(item.id)}
                           aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
                           aria-pressed={isFavorite}
-                          className={`rounded-full bg-white/95 backdrop-blur-xs p-1.5 shadow-xs border border-slate-200/80 hover:bg-white transition ${
+                          className={`rounded-full bg-white/95 backdrop-blur-xs p-1.5 shadow-xs border border-slate-200/80 hover:bg-white transition active:scale-95 ${
                             isFavorite ? "text-rose-500" : "text-slate-400 hover:text-rose-500"
                           }`}
                         >
-                          <Heart size={15} fill={isFavorite ? "currentColor" : "none"} />
+                          <Heart size={14} fill={isFavorite ? "currentColor" : "none"} />
                         </button>
                         <button
                           onClick={() => shareProduct(item)}
                           aria-label="Share product on WhatsApp"
-                          className="rounded-full bg-white/95 backdrop-blur-xs p-1.5 shadow-xs border border-slate-200/80 hover:bg-white text-[#25D366] transition"
+                          className="rounded-full bg-white/95 backdrop-blur-xs p-1.5 shadow-xs border border-slate-200/80 hover:bg-white text-[#25D366] transition active:scale-95"
                         >
-                          <Share2 size={15} />
+                          <Share2 size={14} />
                         </button>
                       </div>
                     </div>
 
-                    <div className="p-3 flex-1 flex flex-col justify-between gap-3">
-                      <div>
-                        {/* Single Item Title - No redundant category subtitle */}
+                    {/* Compact Card Content - Centered & Reduced Vertical Gap */}
+                    <div className="p-2.5 sm:p-3 flex-1 flex flex-col items-center text-center justify-between gap-1.5 sm:gap-2">
+                      <div className="w-full">
+                        {/* Centered Product Title */}
                         <h3 className="font-bold text-slate-900 text-xs sm:text-sm line-clamp-2 leading-snug">
                           {item.nameEn?.trim() || item.nameGu}
                         </h3>
 
-                        {/* Price display: Bold main price, crossed original price, ONE unit chip, Special Offer tag */}
-                        <div className="mt-2 flex items-baseline flex-wrap gap-1.5">
+                        {/* Centered Pricing Row: ₹120 / ₹150 / 500g */}
+                        <div className="mt-1 flex items-center justify-center flex-wrap gap-1.5">
                           <span className="font-extrabold text-orange-600 text-sm sm:text-base">
                             ₹{item.price}
                           </span>
                           {item.originalPrice > item.price && (
-                            <del className="text-[11px] text-slate-400 font-normal line-through">
+                            <del className="text-[11px] sm:text-xs text-slate-400 font-normal line-through">
                               ₹{item.originalPrice}
                             </del>
                           )}
-                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/70">
+                          <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/70">
                             {unitChip}
                           </span>
-                          {(item.offer || item.originalPrice > item.price) && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
-                              Special Offer
-                            </span>
-                          )}
                         </div>
                       </div>
 
                       {/* Smooth Counter State (- 1 +) or Solid Orange + Add to List Button */}
-                      {inCartQty > 0 ? (
-                        <div className="flex items-center justify-between w-full rounded-xl bg-orange-50 border border-orange-200 p-1">
+                      <div className="w-full pt-0.5">
+                        {inCartQty > 0 ? (
+                          <div className="flex items-center justify-between w-full rounded-xl bg-orange-50 border border-orange-200 p-0.5 sm:p-1">
+                            <button
+                              type="button"
+                              onClick={() => updateQty(item.id, -1)}
+                              aria-label="Decrease quantity"
+                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white text-orange-600 font-bold flex items-center justify-center hover:bg-orange-100 active:scale-95 transition shadow-2xs border border-orange-200"
+                            >
+                              <Minus size={13} />
+                            </button>
+                            <span className="font-extrabold text-[11px] sm:text-xs text-orange-950 px-1 sm:px-2">
+                              {inCartQty} in cart
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateQty(item.id, 1)}
+                              aria-label="Increase quantity"
+                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-orange-500 text-white font-bold flex items-center justify-center hover:bg-orange-600 active:scale-95 transition shadow-2xs"
+                            >
+                              <Plus size={13} />
+                            </button>
+                          </div>
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => updateQty(item.id, -1)}
-                            aria-label="Decrease quantity"
-                            className="w-8 h-8 rounded-lg bg-white text-orange-600 font-bold flex items-center justify-center hover:bg-orange-100 active:scale-95 transition shadow-2xs border border-orange-200"
+                            onClick={() => addToCart(item)}
+                            disabled={!isAvailable}
+                            className={`w-full py-2 sm:py-2.5 px-3 rounded-xl font-bold text-xs transition duration-150 active:scale-95 flex items-center justify-center gap-1 shadow-xs ${
+                              bouncedProductId === item.id ? "cart-add-bounce" : ""
+                            } ${
+                              isAvailable
+                                ? "bg-orange-500 hover:bg-orange-600 text-white active:bg-orange-700 shadow-sm"
+                                : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                            }`}
                           >
-                            <Minus size={14} />
+                            {isAvailable ? "+ Add to List" : "Out of stock"}
                           </button>
-                          <span className="font-extrabold text-xs text-orange-950 px-2">
-                            {inCartQty} in cart
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => updateQty(item.id, 1)}
-                            aria-label="Increase quantity"
-                            className="w-8 h-8 rounded-lg bg-orange-500 text-white font-bold flex items-center justify-center hover:bg-orange-600 active:scale-95 transition shadow-2xs"
-                          >
-                            <Plus size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => addToCart(item)}
-                          disabled={!isAvailable}
-                          className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs transition duration-150 active:scale-95 flex items-center justify-center gap-1 shadow-xs ${
-                            bouncedProductId === item.id ? "cart-add-bounce" : ""
-                          } ${
-                            isAvailable
-                              ? "bg-orange-500 hover:bg-orange-600 text-white active:bg-orange-700 shadow-sm"
-                              : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
-                          }`}
-                        >
-                          {isAvailable ? "+ Add to List" : "Out of stock"}
-                        </button>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

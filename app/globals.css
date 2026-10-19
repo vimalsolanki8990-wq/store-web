@@ -62,3 +62,72 @@ body {
   background-size: 200% 100%;
   animation: shimmerAnim 1.6s ease-in-out infinite;
 }
+
+/* Animated 'SPECIAL OFFER' Ribbon Badge */
+@keyframes offerPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes glintSweep {
+  0% {
+    transform: translateX(-150%) skewX(-25deg);
+  }
+  35%, 100% {
+    transform: translateX(250%) skewX(-25deg);
+  }
+}
+
+@keyframes sparkleTwinkle {
+  0%, 100% {
+    opacity: 0.65;
+    transform: scale(0.9) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25) rotate(18deg);
+    filter: drop-shadow(0 0 3px #fef08a);
+  }
+}
+
+.offer-badge-pulse {
+  animation: offerPulse 2.6s ease-in-out infinite;
+}
+
+.glint-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.glint-effect::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    transparent 35%,
+    rgba(255, 255, 255, 0.75) 50%,
+    transparent 65%,
+    transparent 100%
+  );
+  animation: glintSweep 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.sparkle-icon {
+  display: inline-block;
+  animation: sparkleTwinkle 2s ease-in-out infinite;
+}
+
+.sparkle-icon-delayed {
+  display: inline-block;
+  animation: sparkleTwinkle 2s ease-in-out infinite 1s;
+}
