@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useDeferredValue } from "react";
+import { useRouter } from "next/navigation";
 import { db } from "./firebase";
 import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import { toPng } from "html-to-image";
@@ -60,6 +61,36 @@ interface SpeechRecognitionInstance {
 const CATEGORY_ICONS: Record<string, typeof Wheat> = { Wheat, Droplets, Flame, Cookie, Lamp, Sparkles, Store, ExternalLink, MapPin };
 
 export default function CustomerStorePage() {
+  const router = useRouter();
+  const secretTapCountRef = useRef(0);
+  const secretTapTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleSecretHeaderTap = () => {
+    secretTapCountRef.current += 1;
+
+    if (secretTapTimerRef.current) {
+      clearTimeout(secretTapTimerRef.current);
+    }
+
+    if (secretTapCountRef.current >= 3) {
+      secretTapCountRef.current = 0;
+      router.push("/admin");
+      return;
+    }
+
+    secretTapTimerRef.current = setTimeout(() => {
+      secretTapCountRef.current = 0;
+    }, 2000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (secretTapTimerRef.current) {
+        clearTimeout(secretTapTimerRef.current);
+      }
+    };
+  }, []);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [bannersLoading, setBannersLoading] = useState(true);
@@ -581,7 +612,18 @@ export default function CustomerStorePage() {
         <header className="border-b border-stone-200/80 bg-white/95 backdrop-blur-md">
           <div className="max-w-6xl mx-auto px-4 py-3">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
+              <div
+                onClick={handleSecretHeaderTap}
+                className="flex items-center gap-3 cursor-pointer select-none active:opacity-90 transition-opacity"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    handleSecretHeaderTap();
+                  }
+                }}
+                aria-label="Store details"
+              >
                 {storeSettings.logoUrl && !logoFailed ? (
                   <img
                     src={storeSettings.logoUrl}
@@ -1305,13 +1347,7 @@ export default function CustomerStorePage() {
             <span className="text-[10px]">Favorites</span>
           </button>
 
-          <a
-            href="/admin"
-            className="flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition"
-          >
-            <LockKeyhole size={19} />
-            <span className="text-[10px]">Admin</span>
-          </a>
+
         </div>
       </nav>
 
