@@ -961,41 +961,45 @@ export default function CustomerStorePage() {
                         }`}
                       />
 
-                      {/* Animated 'SPECIAL OFFER' Ribbon Badge with Golden Sparkle Accents */}
+                      {/* Animated 'SPECIAL OFFER' Ribbon Badge - Compact, Angled & Corner-Anchored */}
                       {isAvailable && (item.offer || item.originalPrice > item.price) && (
-                        <div className="absolute top-2 left-2 z-10 offer-badge-pulse">
-                          <div className="glint-effect relative inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-md shadow-red-950/25 border border-amber-300/40 select-none">
-                            <span className="sparkle-icon text-amber-200 text-[9px] sm:text-[10px] leading-none">✦</span>
-                            <span className="font-black text-[8px] sm:text-[9.5px] tracking-wider uppercase drop-shadow-xs">SPECIAL OFFER</span>
-                            <span className="sparkle-icon-delayed text-amber-200 text-[9px] sm:text-[10px] leading-none">✦</span>
+                        <div className="absolute top-0 left-0 z-10 offer-badge-pulse pointer-events-none origin-top-left">
+                          <div className="glint-effect relative inline-flex items-center gap-0.5 h-5 sm:h-5.5 px-2 rounded-br-xl bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-xs border-b border-r border-amber-300/40 select-none origin-top-left -rotate-[1deg]">
+                            <span className="sparkle-icon text-amber-200 text-[7px] leading-none">✦</span>
+                            <span className="font-black text-[7.5px] sm:text-[8px] tracking-wider uppercase drop-shadow-xs whitespace-nowrap">
+                              SPECIAL OFFER
+                            </span>
+                            <span className="sparkle-icon-delayed text-amber-200 text-[7px] leading-none">✦</span>
                           </div>
                         </div>
                       )}
 
                       {!isAvailable && (
-                        <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow z-10">
+                        <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow z-10 select-none">
                           Out of stock
                         </span>
                       )}
 
-                      {/* Favorite Heart & WhatsApp Share Action Icons */}
-                      <div className="absolute right-2 top-2 flex gap-1 z-10">
+                      {/* Favorite Heart & WhatsApp Share Action Icons - Pushed to right edge with generous gap */}
+                      <div className="absolute top-2 right-2 flex items-center gap-1 z-20">
                         <button
+                          type="button"
                           onClick={() => toggleFavorite(item.id)}
                           aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
                           aria-pressed={isFavorite}
-                          className={`rounded-full bg-white/95 backdrop-blur-xs p-1.5 shadow-xs border border-slate-200/80 hover:bg-white transition active:scale-95 ${
+                          className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full bg-white/95 backdrop-blur-xs flex items-center justify-center shadow-xs border border-slate-200/80 hover:bg-white transition active:scale-90 ${
                             isFavorite ? "text-rose-500" : "text-slate-400 hover:text-rose-500"
                           }`}
                         >
-                          <Heart size={14} fill={isFavorite ? "currentColor" : "none"} />
+                          <Heart size={13} fill={isFavorite ? "currentColor" : "none"} />
                         </button>
                         <button
+                          type="button"
                           onClick={() => shareProduct(item)}
                           aria-label="Share product on WhatsApp"
-                          className="rounded-full bg-white/95 backdrop-blur-xs p-1.5 shadow-xs border border-slate-200/80 hover:bg-white text-[#25D366] transition active:scale-95"
+                          className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full bg-white/95 backdrop-blur-xs flex items-center justify-center shadow-xs border border-slate-200/80 hover:bg-white text-[#25D366] transition active:scale-90"
                         >
-                          <Share2 size={14} />
+                          <Share2 size={13} />
                         </button>
                       </div>
                     </div>
