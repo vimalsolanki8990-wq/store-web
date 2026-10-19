@@ -504,7 +504,7 @@ export default function CustomerStorePage() {
   const activeSliderIndex = activeBanners.length ? sliderIndex % activeBanners.length : 0;
 
   return (
-    <div className="bg-[#f8fafc] text-slate-800 min-h-screen font-sans flex flex-col antialiased">
+    <div className="bg-[#fbf9f5] text-slate-800 min-h-screen font-sans flex flex-col antialiased">
       {toastMsg && (
         <div className="fixed top-16 right-4 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs border border-orange-500">
           <Check className="text-emerald-400" size={16} />
@@ -512,131 +512,134 @@ export default function CustomerStorePage() {
         </div>
       )}
 
-      {/* 1. Top Ticker Banner: Light warm orange announcement bar with soft delivery icon */}
-      {storeSettings.noticeEnabled && (
-        <div className="sticky top-0 z-40 bg-amber-50/95 backdrop-blur-xs border-b border-amber-200/80 py-2 px-3 text-xs font-semibold text-amber-950 shadow-2xs">
-          <div className="max-w-6xl mx-auto flex items-center justify-center gap-2 text-center">
-            <Truck className="text-amber-700 shrink-0" size={15} aria-hidden="true" />
-            <span className="truncate">
-              {storeSettings.noticeText || "Fresh seasonal spices and pure groundnut oil now available!"}
-            </span>
+      {/* 1. Top Ticker Banner & Store Header: Unified Sticky Container to Prevent Any Overlaps */}
+      <div className="sticky top-0 z-30 shadow-2xs">
+        {/* Top Ticker Banner: Warm orange announcement bar with delivery truck icon */}
+        {storeSettings.noticeEnabled && (
+          <div className="bg-amber-100/70 border-b border-amber-200/70 py-1.5 px-3 text-xs font-semibold text-amber-950 backdrop-blur-xs">
+            <div className="max-w-6xl mx-auto flex items-center justify-center gap-2 text-center">
+              <Truck className="text-amber-700 shrink-0" size={14} aria-hidden="true" />
+              <span className="truncate">
+                {storeSettings.noticeText || "Fresh seasonal spices and pure groundnut oil now available!"}
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* 2. Store Header: Name, Subtitle, and Open Status Capsule in Green Badge */}
-      <header className={`sticky ${storeSettings.noticeEnabled ? "top-8" : "top-0"} z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs`}>
-        <div className="max-w-6xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center text-white shadow-xs overflow-hidden bg-gradient-to-tr from-orange-600 to-amber-500">
-                {storeSettings.logoMode === "image" && storeSettings.logoUrl ? (
-                  <img src={storeSettings.logoUrl} alt="Store logo" className="h-full w-full object-cover" />
-                ) : (
-                  <StoreLogoIcon size={24} aria-hidden="true" />
-                )}
+        {/* Store Header & Clean Search Bar */}
+        <header className="border-b border-stone-200/80 bg-white/95 backdrop-blur-md">
+          <div className="max-w-6xl mx-auto px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center text-white shadow-xs overflow-hidden bg-gradient-to-tr from-orange-600 to-amber-500">
+                  {storeSettings.logoMode === "image" && storeSettings.logoUrl ? (
+                    <img src={storeSettings.logoUrl} alt="Store logo" className="h-full w-full object-cover" />
+                  ) : (
+                    <StoreLogoIcon size={22} aria-hidden="true" />
+                  )}
+                </div>
+                <div>
+                  <h1 className="text-base sm:text-xl md:text-2xl font-black leading-tight tracking-tight text-slate-900">
+                    {storeSettings.storeName || "Jay Vachhraj General Store"}
+                  </h1>
+                  <p className="text-xs text-orange-600 font-semibold mt-0.5">
+                    Zanzmer • Fresh, quality groceries
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-lg sm:text-2xl font-black leading-tight tracking-tight text-slate-900">
-                  {storeSettings.storeName || "Jay Vachhraj General Store"}
-                </h1>
-                <p className="text-xs text-orange-600 font-semibold mt-0.5">
-                  Zanzmer • Fresh, quality groceries
-                </p>
+              <span className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] sm:text-xs font-bold ${
+                storeIsOpen ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
+              }`}>
+                <span className={`h-2 w-2 rounded-full ${storeIsOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
+                {storeIsOpen ? "Open" : "Closed"} {storeSettings.openingTime || "06:00"} - {storeSettings.closingTime || "21:00"}
+              </span>
+            </div>
+
+            {/* Clean Pill Search Bar */}
+            <div className="mt-3 relative flex items-center">
+              {speechSupported ? (
+                <button
+                  type="button"
+                  onClick={startVoiceSearch}
+                  aria-label="Search by voice"
+                  aria-pressed={isListening}
+                  className={`absolute left-3.5 z-10 p-1 rounded-full transition ${
+                    isListening ? "text-rose-500 animate-pulse bg-rose-50" : "text-slate-400 hover:text-orange-600"
+                  }`}
+                >
+                  <Mic size={18} />
+                </button>
+              ) : (
+                <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                  <Mic size={18} />
+                </div>
+              )}
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search products in Gujarati, Hindi or English..."
+                className="w-full rounded-full border border-stone-200 bg-[#fbf9f5]/80 py-2.5 sm:py-3 pl-11 pr-11 text-xs sm:text-sm text-slate-900 placeholder-slate-400 shadow-2xs focus:bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
+              />
+              <div className="absolute right-3.5 pointer-events-none text-slate-400">
+                <Search size={18} />
               </div>
             </div>
-            <span className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
-              storeIsOpen ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
-            }`}>
-              <span className={`h-2 w-2 rounded-full ${storeIsOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
-              {storeIsOpen ? "Open" : "Closed"} {storeSettings.openingTime || "06:00"} - {storeSettings.closingTime || "21:00"}
-            </span>
-          </div>
+            {speechError && <p role="status" className="mt-1 text-[11px] text-rose-600 text-center">{speechError}</p>}
 
-          {/* 3. Clean Search Bar: Pill-shaped white input with mic icon on left and magnifying glass on right */}
-          <div className="mt-3 relative flex items-center">
-            {speechSupported ? (
+            {/* Quick Filters Pill Bar */}
+            <div className="mt-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar text-xs">
               <button
                 type="button"
-                onClick={startVoiceSearch}
-                aria-label="Search by voice"
-                aria-pressed={isListening}
-                className={`absolute left-3.5 z-10 p-1 rounded-full transition ${
-                  isListening ? "text-rose-500 animate-pulse bg-rose-50" : "text-slate-400 hover:text-orange-600"
+                onClick={() => setSaleOnly((v) => !v)}
+                aria-pressed={saleOnly}
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border transition shrink-0 ${
+                  saleOnly ? "border-orange-500 bg-orange-50 text-orange-700 shadow-2xs" : "border-stone-200 bg-[#fbf9f5] text-slate-600 hover:bg-stone-100"
                 }`}
               >
-                <Mic size={18} />
+                Special Offers {saleOnly && <Check size={12} />}
               </button>
-            ) : (
-              <div className="absolute left-3.5 text-slate-400 pointer-events-none">
-                <Mic size={18} />
-              </div>
-            )}
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search products in Gujarati, Hindi or English..."
-              className="w-full rounded-full border border-slate-200 bg-white py-2.5 sm:py-3 pl-11 pr-11 text-xs sm:text-sm text-slate-900 placeholder-slate-400 shadow-2xs focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
-            />
-            <div className="absolute right-3.5 pointer-events-none text-slate-400">
-              <Search size={18} />
+              <button
+                type="button"
+                onClick={() => setFavoritesOnly((v) => !v)}
+                aria-pressed={favoritesOnly}
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border transition shrink-0 ${
+                  favoritesOnly ? "border-rose-500 bg-rose-50 text-rose-700 shadow-2xs" : "border-stone-200 bg-[#fbf9f5] text-slate-600 hover:bg-stone-100"
+                }`}
+              >
+                <Heart size={12} fill={favoritesOnly ? "currentColor" : "none"} /> Favorites
+              </button>
+              {brands.length > 0 && (
+                <select
+                  aria-label="Filter by brand"
+                  value={brandFilter}
+                  onChange={(e) => setBrandFilter(e.target.value)}
+                  className="rounded-full border border-stone-200 bg-[#fbf9f5] px-3 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0"
+                >
+                  <option value="all">All Brands</option>
+                  {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              )}
+              <select
+                aria-label="Sort by price"
+                value={sortPrice}
+                onChange={(e) => setSortPrice(e.target.value)}
+                className="rounded-full border border-stone-200 bg-[#fbf9f5] px-3 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0"
+              >
+                <option value="featured">Featured Order</option>
+                <option value="low">Price: Low to High</option>
+                <option value="high">Price: High to Low</option>
+              </select>
             </div>
           </div>
-          {speechError && <p role="status" className="mt-1 text-[11px] text-rose-600 text-center">{speechError}</p>}
-
-          {/* Quick Filters Pill Bar */}
-          <div className="mt-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar text-xs">
-            <button
-              type="button"
-              onClick={() => setSaleOnly((v) => !v)}
-              aria-pressed={saleOnly}
-              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border transition shrink-0 ${
-                saleOnly ? "border-orange-500 bg-orange-50 text-orange-700 shadow-2xs" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              Special Offers {saleOnly && <Check size={12} />}
-            </button>
-            <button
-              type="button"
-              onClick={() => setFavoritesOnly((v) => !v)}
-              aria-pressed={favoritesOnly}
-              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border transition shrink-0 ${
-                favoritesOnly ? "border-rose-500 bg-rose-50 text-rose-700 shadow-2xs" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <Heart size={12} fill={favoritesOnly ? "currentColor" : "none"} /> Favorites
-            </button>
-            {brands.length > 0 && (
-              <select
-                aria-label="Filter by brand"
-                value={brandFilter}
-                onChange={(e) => setBrandFilter(e.target.value)}
-                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0"
-              >
-                <option value="all">All Brands</option>
-                {brands.map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
-            )}
-            <select
-              aria-label="Sort by price"
-              value={sortPrice}
-              onChange={(e) => setSortPrice(e.target.value)}
-              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0"
-            >
-              <option value="featured">Featured Order</option>
-              <option value="low">Price: Low to High</option>
-              <option value="high">Price: High to Low</option>
-            </select>
-          </div>
-        </div>
-      </header>
+        </header>
+      </div>
 
       <main className="max-w-6xl mx-auto px-4 py-4 w-full flex-1 pb-28">
-        {/* Active Promotional Banners Slider */}
+        {/* Active Promotional Banners Hero Slider: Constrained to max-h-52 mobile / max-h-72 desktop */}
         {activeBanners.length > 0 && (
-          <div className="mb-5 relative rounded-2xl overflow-hidden shadow-xs border border-slate-200/80 bg-white">
-            <div className="relative w-full aspect-[16/9] sm:aspect-[21/8] min-h-56 sm:min-h-72 max-h-[34rem] overflow-hidden">
+          <div className="mt-4 sm:mt-6 mb-6 relative rounded-3xl overflow-hidden shadow-xs border border-stone-200/80 bg-white">
+            <div className="relative w-full h-44 sm:h-64 max-h-52 sm:max-h-72 overflow-hidden rounded-3xl">
               {activeBanners.map((b, idx) => (
                 <div
                   key={b.id}
@@ -649,14 +652,14 @@ export default function CustomerStorePage() {
                     alt={b.title}
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 p-5 sm:p-10 flex flex-col justify-end bg-gradient-to-t from-black/60 via-black/15 to-transparent">
-                    <span className="inline-block px-2.5 py-0.5 rounded-full bg-orange-500 text-white font-bold text-[10px] w-fit mb-1 shadow">
+                  <div className="absolute inset-0 p-4 sm:p-6 flex flex-col justify-end bg-gradient-to-t from-black/70 via-black/20 to-transparent">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full bg-orange-500 text-white font-bold text-[10px] w-fit mb-1 shadow-xs">
                       {b.tag}
                     </span>
-                    <h2 className="text-white font-black text-sm sm:text-lg leading-tight drop-shadow-md">
+                    <h2 className="text-white font-black text-sm sm:text-base md:text-lg leading-tight drop-shadow-md">
                       {b.title}
                     </h2>
-                    <p className="text-amber-200 text-xs sm:text-sm font-semibold mt-0.5">
+                    <p className="text-amber-200 text-xs sm:text-sm font-semibold mt-0.5 truncate">
                       {b.desc}
                     </p>
                   </div>
@@ -664,27 +667,31 @@ export default function CustomerStorePage() {
               ))}
             </div>
 
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20">
-              {activeBanners.map((_, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setSliderIndex(idx)}
-                  className={`h-2 rounded-full transition-all ${
-                    idx === activeSliderIndex ? "w-5 bg-orange-500" : "w-2 bg-white/70"
-                  }`}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-        {bannersLoading && (
-          <div role="status" aria-label="Loading promotions" className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <div className="skeleton-shimmer h-56 sm:h-72" />
+            {activeBanners.length > 1 && (
+              <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20">
+                {activeBanners.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setSliderIndex(idx)}
+                    aria-label={`Go to slide ${idx + 1}`}
+                    className={`h-1.5 rounded-full transition-all ${
+                      idx === activeSliderIndex ? "w-5 bg-orange-500" : "w-1.5 bg-white/70"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* 4. Circular Category Strip: Story-style circles with subtle borders and labels */}
-        <div id="categories-section" className="mb-6">
+        {bannersLoading && (
+          <div role="status" aria-label="Loading promotions" className="mt-4 sm:mt-6 mb-6 overflow-hidden rounded-3xl border border-stone-200 bg-white">
+            <div className="skeleton-shimmer h-44 sm:h-64 max-h-52 sm:max-h-72" />
+          </div>
+        )}
+
+        {/* Circular Category Strip: Story-style circles with subtle borders and labels */}
+        <div id="categories-section" className="mt-4 sm:mt-6 mb-6">
           <div className="flex items-center justify-between mb-3 px-1">
             <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <FolderOpen size={15} className="text-orange-500" /> Categories
@@ -710,8 +717,8 @@ export default function CustomerStorePage() {
                   <div
                     className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 select-none ${
                       isSel
-                        ? "bg-orange-500 text-white ring-3 ring-orange-500 ring-offset-2 ring-offset-[#f8fafc] shadow-md scale-105"
-                        : "bg-white text-slate-700 border-2 border-slate-200 hover:border-orange-300 hover:bg-orange-50/40 shadow-2xs group-hover:scale-102"
+                        ? "bg-orange-500 text-white ring-3 ring-orange-500 ring-offset-2 ring-offset-[#fbf9f5] shadow-md scale-105"
+                        : "bg-white text-slate-700 border-2 border-stone-200 hover:border-orange-300 hover:bg-orange-50/40 shadow-2xs group-hover:scale-102"
                     }`}
                   >
                     <CategoryIcon size={24} aria-hidden="true" />
@@ -729,31 +736,31 @@ export default function CustomerStorePage() {
           </div>
         </div>
 
-        {/* 5. Deal of the Day Banner: Soft rounded card with 10% Offer badge */}
-        <section className="mb-6 rounded-3xl overflow-hidden border border-amber-200/80 bg-gradient-to-br from-amber-50 via-orange-50/60 to-amber-100/70 p-5 sm:p-7 shadow-xs relative">
+        {/* Deal of the Day Banner: Soft rounded card with 10% Offer badge */}
+        <section className="mt-4 sm:mt-6 mb-6 rounded-3xl overflow-hidden border border-amber-200/80 bg-gradient-to-br from-amber-50/90 via-orange-50/50 to-amber-100/60 p-4 sm:p-6 shadow-xs relative max-h-52 sm:max-h-72 flex flex-col justify-center">
           <div className="relative z-10 max-w-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500 text-white text-[11px] font-black uppercase tracking-wider shadow-2xs">
-                <Sparkles size={12} /> 10% Offer
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-black uppercase tracking-wider shadow-2xs">
+                <Sparkles size={11} /> 10% Offer
               </span>
               <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
                 Deal of the Day
               </span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+            <h2 className="text-base sm:text-xl font-black text-slate-900 leading-snug">
               100% Pure Groundnut Oil & Seasonal Spices
             </h2>
-            <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-600 mt-1 line-clamp-2 leading-relaxed">
               Freshly pressed pure groundnut oil and seasonal spices direct from Zanzmer farmers at wholesale quality rates.
             </p>
-            <div className="mt-4 flex items-center gap-3">
+            <div className="mt-3 flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={() => {
                   setActiveCategory("તેલ-ઘી");
                   setFavoritesOnly(false);
                 }}
-                className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-xs font-bold shadow-xs transition"
+                className="px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-xs font-bold shadow-xs transition"
               >
                 Shop Pure Oil
               </button>
@@ -763,13 +770,13 @@ export default function CustomerStorePage() {
                   setActiveCategory("મસાલા");
                   setFavoritesOnly(false);
                 }}
-                className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold shadow-2xs transition"
+                className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold shadow-2xs transition"
               >
                 View Seasonal Spices
               </button>
             </div>
           </div>
-          <div className="absolute -right-6 -bottom-6 w-44 h-44 sm:w-60 sm:h-60 bg-gradient-to-tr from-amber-300/40 to-orange-400/20 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute -right-6 -bottom-6 w-36 h-36 sm:w-52 sm:h-52 bg-gradient-to-tr from-amber-300/30 to-orange-400/20 rounded-full blur-2xl pointer-events-none" />
         </section>
 
         {lastOrderAvailable && (

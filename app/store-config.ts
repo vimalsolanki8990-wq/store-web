@@ -74,7 +74,7 @@ export const DEFAULT_CATEGORIES: StoreCategory[] = [
 const CLEAN_LIGHT_PALETTE: ThemePalette = {
   primary: "#ea580c",
   secondary: "#c2410c",
-  background: "#f8fafc",
+  background: "#fbf9f5",
   accent: "#f59e0b",
 };
 
@@ -245,11 +245,11 @@ export function storeThemeCssVars(settings: StoreSettings): Record<string, strin
   return {
     "--primary": settings.primaryColor || "#ea580c",
     "--secondary": settings.secondaryColor || "#c2410c",
-    "--background": isDark ? (settings.backgroundColor || "#070b14") : "#f8fafc",
+    "--background": isDark ? (settings.backgroundColor || "#070b14") : "#fbf9f5",
     "--accent": settings.accentColor || "#f59e0b",
     "--store-primary": settings.primaryColor || "#ea580c",
     "--store-secondary": settings.secondaryColor || "#c2410c",
-    "--store-background": isDark ? (settings.backgroundColor || "#070b14") : "#f8fafc",
+    "--store-background": isDark ? (settings.backgroundColor || "#070b14") : "#fbf9f5",
     "--store-accent": settings.accentColor || "#f59e0b",
     "--store-foreground": isDark ? "#f8fafc" : "#0f172a",
     "--store-surface": isDark ? "#111c32" : "#ffffff",
