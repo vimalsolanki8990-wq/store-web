@@ -239,19 +239,40 @@ export default function VisualAdminProtectedPage() {
   useEffect(() => {
     if (!currentUser) return;
 
-    return onSnapshot(
+    const unsub1 = onSnapshot(
       doc(db, "storeSettings", "main"),
       (snapshot) => {
-        const data = snapshot.data() ?? {};
-        const nextSettings = normalizeStoreSettings(data);
-        setStoreSettings(nextSettings);
-        setSettingsForm(nextSettings);
+        if (snapshot.exists()) {
+          const data = snapshot.data() ?? {};
+          const nextSettings = normalizeStoreSettings(data);
+          setStoreSettings(nextSettings);
+          setSettingsForm(nextSettings);
+        }
       },
       (error) => {
-        console.error("Failed to listen for store settings:", error);
-        showToast("Unable to load store settings.");
+        console.warn("storeSettings listener notice:", error);
       },
     );
+
+    const unsub2 = onSnapshot(
+      doc(db, "store_settings", "main"),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data() ?? {};
+          const nextSettings = normalizeStoreSettings(data);
+          setStoreSettings(nextSettings);
+          setSettingsForm(nextSettings);
+        }
+      },
+      (error) => {
+        console.warn("store_settings listener notice:", error);
+      },
+    );
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, [currentUser]);
 
   // Slider Rotate
@@ -485,7 +506,10 @@ export default function VisualAdminProtectedPage() {
         await batch.commit();
       }
       const persistedSettings = normalizeStoreSettings({ ...settingsForm });
-      await setDoc(doc(db, "storeSettings", "main"), persistedSettings);
+      await Promise.all([
+        setDoc(doc(db, "storeSettings", "main"), persistedSettings),
+        setDoc(doc(db, "store_settings", "main"), persistedSettings),
+      ]);
       if (affectedProducts.length) setProducts((current) => current.map((product) => removedIds.has(product.category) ? { ...product, category: fallbackId! } : product));
       setSettingsForm(persistedSettings);
       setStoreSettings(persistedSettings);
@@ -1385,23 +1409,120 @@ export default function VisualAdminProtectedPage() {
             <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
               <form onSubmit={handleSaveSettings} className="space-y-4">
                 <section id="settings-module-store" className="glass-panel interactive-lift scroll-mt-4 space-y-4 p-4 sm:p-5">
-                <h3 className="text-sm font-black text-white">Branding</h3>
-                <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
-                  Store name
-                  <input type="text" value={settingsForm.storeName} onChange={(event) => setSettingsForm((current) => ({ ...current, storeName: event.target.value }))} className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white" />
-                </label>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block space-y-1.5 text-xs font-semibold text-slate-300">Logo mode
-                    <select value={settingsForm.logoMode} onChange={(event) => setSettingsForm((current) => ({ ...current, logoMode: event.target.value as "icon" | "image" }))} className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white">
-                      <option value="icon">Lucide icon</option><option value="image">Image logo</option>
-                    </select>
-                  </label>
-                  {settingsForm.logoMode === "icon" ? <label className="block space-y-1.5 text-xs font-semibold text-slate-300">Logo icon
-                    <select value={settingsForm.logoIcon} onChange={(event) => setSettingsForm((current) => ({ ...current, logoIcon: event.target.value }))} className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white"><option value="Store">Store</option><option value="ExternalLink">External link</option><option value="MapPin">Map pin</option></select>
-                  </label> : <div className="space-y-2"><label className="block space-y-1.5 text-xs font-semibold text-slate-300">Logo image URL<input type="url" value={settingsForm.logoUrl.startsWith("data:") ? "" : settingsForm.logoUrl} onChange={(event) => setSettingsForm((current) => ({ ...current, logoUrl: event.target.value }))} placeholder="https://…" className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white" /></label><label className="flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs font-bold text-slate-200"><ImagePlus size={16} />{isUploadingLogo ? "Preparing image…" : "Upload logo image"}<input type="file" accept="image/*" onChange={handleLogoUpload} disabled={isUploadingLogo} className="sr-only" /></label></div>}
-                </div>
-                {settingsForm.logoMode === "image" && settingsForm.logoUrl && <img src={settingsForm.logoUrl} alt="Logo preview" className="h-16 w-16 rounded-xl border border-[#34445f] object-cover" />}
+                  <div className="flex items-center justify-between border-b border-[#263653] pb-3">
+                    <div>
+                      <h3 className="text-sm font-black text-white">Store Branding & Logo</h3>
+                      <p className="text-xs text-slate-400">Manage your store identity, custom logo, and home screen PWA banner</p>
+                    </div>
+                  </div>
 
+                  <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                    Store name
+                    <input
+                      type="text"
+                      value={settingsForm.storeName}
+                      onChange={(event) => setSettingsForm((current) => ({ ...current, storeName: event.target.value }))}
+                      className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none"
+                    />
+                  </label>
+
+                  {/* Logo Management with Live Circular Preview */}
+                  <div className="rounded-2xl border border-[#34445f] bg-[#111c32] p-4 space-y-3">
+                    <span className="text-xs font-bold text-slate-200 block">Store Logo</span>
+                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                      {/* Live Circular Preview Thumbnail */}
+                      <div className="relative group shrink-0 flex flex-col items-center">
+                        <div className="w-16 h-16 rounded-full border-2 border-orange-400 shadow-md bg-stone-900 flex items-center justify-center overflow-hidden">
+                          {settingsForm.logoUrl ? (
+                            <img
+                              src={settingsForm.logoUrl}
+                              alt="Store logo preview"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Store className="text-orange-400" size={28} />
+                          )}
+                        </div>
+                        <span className="mt-1 block text-center text-[10px] font-semibold text-slate-400">Preview</span>
+                      </div>
+
+                      {/* Inputs: URL and File Upload */}
+                      <div className="flex-1 w-full space-y-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                            Logo image URL
+                          </label>
+                          <input
+                            type="url"
+                            value={settingsForm.logoUrl.startsWith("data:") ? "" : settingsForm.logoUrl}
+                            onChange={(event) => {
+                              const url = event.target.value;
+                              setSettingsForm((current) => ({
+                                ...current,
+                                logoUrl: url,
+                                logoMode: url ? "image" : current.logoMode,
+                              }));
+                            }}
+                            placeholder="https://example.com/logo.png"
+                            className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition">
+                            <ImagePlus size={15} className="text-orange-400" />
+                            {isUploadingLogo ? "Preparing image…" : "Upload logo image"}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleLogoUpload}
+                              disabled={isUploadingLogo}
+                              className="sr-only"
+                            />
+                          </label>
+
+                          {settingsForm.logoUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setSettingsForm((current) => ({ ...current, logoUrl: "", logoMode: "icon" }))}
+                              className="inline-flex min-h-9 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/20 transition"
+                            >
+                              Reset to default icon
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* PWA Home Screen Install Banner Toggle */}
+                  <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl border border-[#34445f] bg-[#111c32]">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>📲</span>
+                        <span>Show Install Banner on Home Screen (Yes/No)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Display the floating &ldquo;📲 જય વછરાજ એપ ઇન્સ્ટોલ કરો&rdquo; PWA install prompt to visitors.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettingsForm((current) => ({
+                          ...current,
+                          showInstallBanner: !current.showInstallBanner,
+                        }))
+                      }
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition shrink-0 shadow-sm ${
+                        settingsForm.showInstallBanner
+                          ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                          : "bg-slate-700 hover:bg-slate-600 text-slate-300"
+                      }`}
+                    >
+                      {settingsForm.showInstallBanner ? "Yes" : "No"}
+                    </button>
+                  </div>
                 </section>
 
                 <section id="settings-module-inventory" className="glass-panel interactive-lift scroll-mt-4 space-y-3 p-3 sm:p-4">

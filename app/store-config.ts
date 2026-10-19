@@ -60,6 +60,7 @@ export interface StoreSettings {
   promoTitle: string;
   promoText: string;
   promoImageUrl: string;
+  showInstallBanner: boolean;
 }
 
 export const DEFAULT_CATEGORIES: StoreCategory[] = [
@@ -116,6 +117,7 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   promoTitle: "",
   promoText: "",
   promoImageUrl: "",
+  showInstallBanner: true,
 };
 
 export const THEME_PRESETS: Record<string, ThemePreset> = {
@@ -298,5 +300,6 @@ export function normalizeStoreSettings(data: Record<string, unknown> = {}): Stor
     promoTitle: String(data.promoTitle ?? ""),
     promoText: String(data.promoText ?? ""),
     promoImageUrl: String(data.promoImageUrl ?? ""),
+    showInstallBanner: data.showInstallBanner !== false,
   };
 }

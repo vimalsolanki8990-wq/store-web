@@ -101,6 +101,11 @@ export default function CustomerStorePage() {
   const [viewCount, setViewCount] = useState(0);
   const receiptRef = useRef<HTMLDivElement>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [storeSettings.logoUrl]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -221,17 +226,34 @@ export default function CustomerStorePage() {
   }, [storeSettings.promoEnabled]);
 
   useEffect(() => {
-    return onSnapshot(
+    const unsub1 = onSnapshot(
       doc(db, "storeSettings", "main"),
       (snapshot) => {
-        const data = snapshot.data() ?? {};
-        setStoreSettings(normalizeStoreSettings(data));
+        if (snapshot.exists()) {
+          setStoreSettings(normalizeStoreSettings(snapshot.data() ?? {}));
+        }
       },
       (error) => {
-        console.error("Failed to listen for store settings:", error);
-        setStoreSettings(DEFAULT_STORE_SETTINGS);
+        console.warn("storeSettings listener notice:", error);
       },
     );
+
+    const unsub2 = onSnapshot(
+      doc(db, "store_settings", "main"),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setStoreSettings(normalizeStoreSettings(snapshot.data() ?? {}));
+        }
+      },
+      (error) => {
+        console.warn("store_settings listener notice:", error);
+      },
+    );
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, []);
 
   useEffect(() => {
@@ -350,14 +372,43 @@ export default function CustomerStorePage() {
 
   const installApp = async () => {
     if (!installPrompt) return;
-    await installPrompt.prompt();
-    await installPrompt.userChoice;
-    setInstallPrompt(null);
-    setInstallPromptVisible(false);
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === "accepted") {
+        setInstallPrompt(null);
+        setInstallPromptVisible(false);
+      }
+    } catch (err) {
+      console.warn("PWA install error:", err);
+    }
   };
 
   useEffect(() => {
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch((error) => console.warn("PWA worker registration failed:", error));
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch((error) => console.warn("PWA worker registration failed:", error));
+    }
+
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+      setInstallPromptVisible(true);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+
+    const handleAppInstalled = () => {
+      setInstallPrompt(null);
+      setInstallPromptVisible(false);
+      showToast("જય વછરાજ એપ સફળતાપૂર્વક ઇન્સ્ટોલ થઈ ગઈ!");
+    };
+
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
   }, []);
 
   const updateQty = (key: string, delta: number) => {
@@ -531,13 +582,18 @@ export default function CustomerStorePage() {
           <div className="max-w-6xl mx-auto px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center text-white shadow-xs overflow-hidden bg-gradient-to-tr from-orange-600 to-amber-500">
-                  {storeSettings.logoMode === "image" && storeSettings.logoUrl ? (
-                    <img src={storeSettings.logoUrl} alt="Store logo" className="h-full w-full object-cover" />
-                  ) : (
+                {storeSettings.logoUrl && !logoFailed ? (
+                  <img
+                    src={storeSettings.logoUrl}
+                    alt={storeSettings.storeName || "Store logo"}
+                    onError={() => setLogoFailed(true)}
+                    className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-2xl object-cover shadow-sm border border-orange-100"
+                  />
+                ) : (
+                  <div className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center text-white shadow-xs overflow-hidden bg-gradient-to-tr from-orange-600 to-amber-500">
                     <StoreLogoIcon size={22} aria-hidden="true" />
-                  )}
-                </div>
+                  </div>
+                )}
                 <div>
                   <h1 className="text-base sm:text-xl md:text-2xl font-black leading-tight tracking-tight text-slate-900">
                     {storeSettings.storeName || "Jay Vachhraj General Store"}
@@ -788,18 +844,7 @@ export default function CustomerStorePage() {
           </div>
         )}
 
-        {isInstallPromptVisible && (
-          <aside className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
-            <div>
-              <span className="block text-sm font-bold text-emerald-900">Install Jay Vachhraj Store App</span>
-              <span className="mt-0.5 block text-xs text-emerald-700">Fast, lightweight shopping app on your device</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={installApp} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700">Install App</button>
-              <button onClick={() => setInstallPromptVisible(false)} aria-label="Dismiss app install prompt" className="rounded-lg p-2 text-emerald-700 hover:text-emerald-900"><X size={16} /></button>
-            </div>
-          </aside>
-        )}
+
 
         {/* Product Grid: grid grid-cols-2 md:grid-cols-4 gap-4 p-4 */}
         {loading ? (
@@ -1163,7 +1208,39 @@ export default function CustomerStorePage() {
         </div>
       )}
 
-      {/* 7. Floating Glassmorphic Bottom Dock: Translucent nav bar */}
+      {/* Floating Glassmorphic PWA Install Capsule */}
+      {isInstallPromptVisible && storeSettings.showInstallBanner !== false && installPrompt && (
+        <aside
+          role="region"
+          aria-label="PWA App Install"
+          className={`fixed ${totalCartCount > 0 ? "bottom-36" : "bottom-20"} left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md glass-dock rounded-2xl px-4 py-2.5 shadow-xl border border-orange-200/90 flex items-center justify-between gap-3 transition-all duration-300 animate-in fade-in slide-in-from-bottom`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-xl shrink-0" aria-hidden="true">📲</span>
+            <span className="text-xs sm:text-sm font-black text-slate-900 truncate">
+              જય વછરાજ એપ ઇન્સ્ટોલ કરો
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={installApp}
+              className="px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-bold text-xs shadow-sm transition active:scale-95"
+            >
+              Install App
+            </button>
+            <button
+              type="button"
+              onClick={() => setInstallPromptVisible(false)}
+              aria-label="Close install prompt"
+              className="p-1 text-slate-400 hover:text-slate-700 rounded-lg transition"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </aside>
+      )}
       <nav
         aria-label="Bottom Navigation Dock"
         className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md glass-dock rounded-2xl px-3 py-2 shadow-lg border border-orange-100/70"
