@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useDeferredValue } from "react";
 import { useRouter } from "next/navigation";
 import { db } from "./firebase";
 import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
-import { toPng } from "html-to-image";
+import html2canvas from "html2canvas";
 import { Camera, Check, CheckCircle2, ExternalLink, FileDown, FolderOpen, Heart, Home, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, StoreCategory, StoreSettings } from "./store-config";
 
@@ -131,6 +131,9 @@ export default function CustomerStorePage() {
   const [receiptTimestamp, setReceiptTimestamp] = useState("");
   const [viewCount, setViewCount] = useState(0);
   const receiptRef = useRef<HTMLDivElement>(null);
+  const cachedReceiptBlobRef = useRef<Blob | null>(null);
+  const cachedReceiptFileRef = useRef<File | null>(null);
+  const cachedReceiptDataUrlRef = useRef<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [logoFailed, setLogoFailed] = useState(false);
 
@@ -467,6 +470,13 @@ export default function CustomerStorePage() {
     });
   };
 
+  const totalCartCount = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
+  const cartTotal = Object.values(cart).reduce((sum, item) => sum + item.quantity * item.price, 0);
+  const cartDiscount = Object.values(cart).reduce((sum, item) => {
+    const originalPrice = products.find((product) => product.id === item.id)?.originalPrice ?? item.price;
+    return sum + Math.max(0, originalPrice - item.price) * item.quantity;
+  }, 0);
+
   const handleSendWhatsAppOrder = async () => {
     const keys = Object.keys(cart);
     if (keys.length === 0) {
@@ -493,6 +503,28 @@ export default function CustomerStorePage() {
       window.setTimeout(() => setConfetti(false), 1800);
       setReceiptOpen(true);
       setCartOpen(false);
+
+      // Record order in background so store database is kept in sync
+      try {
+        const total = Object.values(cart).reduce((sum, item) => sum + item.quantity * item.price, 0);
+        const orderRecord = {
+          customerName: custName.trim() || "ગ્રાહક",
+          customerPhone: cleanPhone || "-",
+          customerAddress: custAddress.trim() || "ઝાંઝમેર",
+          items: Object.values(cart),
+          total,
+          discount: cartDiscount,
+          status: "new",
+          createdAt: serverTimestamp(),
+        };
+        addDoc(collection(db, "orders"), orderRecord).catch((err) => {
+          console.warn("Order recording notice:", err);
+        });
+        localStorage.setItem("jay-store-last-order", JSON.stringify(Object.values(cart)));
+        setLastOrderAvailable(true);
+      } catch (orderErr) {
+        console.warn("Background order save notice:", orderErr);
+      }
     } catch (error) {
       console.error("Unable to render the order slip:", error);
       alert("Unable to prepare the receipt image. Please try again.");
@@ -501,19 +533,181 @@ export default function CustomerStorePage() {
     }
   };
 
+  const generateNativeReceiptCanvas = (): HTMLCanvasElement | null => {
+    const items = Object.values(cart);
+    if (items.length === 0) return null;
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const width = 600;
+    const baseHeight = 420;
+    const itemHeight = 48;
+    const totalHeight = baseHeight + items.length * itemHeight;
+
+    canvas.width = width;
+    canvas.height = totalHeight;
+
+    // Background
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, totalHeight);
+
+    // Store Header
+    ctx.fillStyle = "#111827";
+    ctx.font = "bold 26px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("જય વછરાજ જનરલ સ્ટોર", width / 2, 50);
+
+    ctx.font = "16px sans-serif";
+    ctx.fillStyle = "#4b5563";
+    ctx.fillText("ઝાંઝમેર", width / 2, 78);
+    ctx.fillText("સંપર્ક: +91 9638009880", width / 2, 102);
+
+    const dateStr = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+    ctx.font = "14px monospace";
+    ctx.fillText(`તારીખ: ${dateStr}`, width / 2, 128);
+
+    // Customer Details Box
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#374151";
+    ctx.font = "15px sans-serif";
+    ctx.fillText(`ગ્રાહક: ${custName || "ગ્રાહક"}`, 40, 165);
+    ctx.fillText(`મોબાઇલ: ${custPhone || "-"}`, 40, 188);
+
+    // Divider Line
+    ctx.strokeStyle = "#e5e7eb";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(40, 205);
+    ctx.lineTo(width - 40, 205);
+    ctx.stroke();
+
+    // Table Headers
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillStyle = "#1f2937";
+    ctx.fillText("આઇટમ (ITEM)", 40, 230);
+    ctx.textAlign = "right";
+    ctx.fillText("રકમ (₹)", width - 40, 230);
+
+    // Items List
+    let y = 265;
+    ctx.font = "15px sans-serif";
+    items.forEach((item: any, idx: number) => {
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#111827";
+      const name = `${idx + 1}. ${item.name} (${item.unit || "1"})`;
+      ctx.fillText(name.length > 32 ? name.substring(0, 30) + "..." : name, 40, y);
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#111827";
+      ctx.fillText(`₹${(item.price * item.quantity).toFixed(2)}`, width - 40, y);
+
+      ctx.textAlign = "left";
+      ctx.font = "13px sans-serif";
+      ctx.fillStyle = "#6b7280";
+      ctx.fillText(`   ${item.quantity} × ₹${item.price}`, 40, y + 18);
+
+      ctx.font = "15px sans-serif";
+      y += itemHeight;
+    });
+
+    // Total Divider
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(40, y + 10);
+    ctx.lineTo(width - 40, y + 10);
+    ctx.stroke();
+
+    // Total Amount
+    y += 40;
+    ctx.font = "bold 20px sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#111827";
+    ctx.fillText("કુલ રકમ (Total):", 40, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#ea580c";
+    ctx.fillText(`₹${cartTotal.toFixed(2)}`, width - 40, y);
+
+    // Footer Thank You
+    y += 50;
+    ctx.textAlign = "center";
+    ctx.font = "bold 16px sans-serif";
+    ctx.fillStyle = "#374151";
+    ctx.fillText("પધારવા બદલ આભાર!", width / 2, y);
+
+    return canvas;
+  };
+
+  const generateNativeReceiptBlob = async (): Promise<Blob | null> => {
+    const canvas = generateNativeReceiptCanvas();
+    if (!canvas) return null;
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  };
+
+  const capturePreviewReceiptBlob = async (): Promise<Blob | null> => {
+    if (!receiptRef.current) return null;
+    const element = receiptRef.current;
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 3, // Crisp HD resolution
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+        onclone: (clonedDoc) => {
+          // Ensure full height is unclipped and fully rendered
+          const card = (clonedDoc.querySelector('[data-receipt-card="true"]') as HTMLElement) || clonedDoc.body;
+          if (card && card !== clonedDoc.body) {
+            card.style.maxHeight = 'none';
+            card.style.height = 'auto';
+            card.style.overflow = 'visible';
+            card.style.paddingBottom = '24px';
+          }
+        }
+      });
+
+      return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    } catch (err) {
+      console.error("DOM capture failed, falling back to clean canvas:", err);
+      // Safe fallback if element capture fails
+      return await generateNativeReceiptBlob();
+    }
+  };
+
+  const handleDownloadOrShareReceipt = async (): Promise<string | null> => {
+    const canvas = generateNativeReceiptCanvas();
+    return canvas ? canvas.toDataURL("image/png") : null;
+  };
+
   const downloadReceipt = async () => {
-    if (!receiptRef.current) return;
     setIsSharingReceipt(true);
     try {
-      const image = await toPng(receiptRef.current, {
-        cacheBust: true,
-        pixelRatio: 2,
-        backgroundColor: "#ffffff",
-      });
-      const download = document.createElement("a");
-      download.href = image;
-      download.download = "jay-vachhraj-bill.png";
-      download.click();
+      const blob = await capturePreviewReceiptBlob();
+      if (!blob) {
+        showToast("બિલ ડાઉનલોડ કરવામાં ભૂલ આવી.");
+        return;
+      }
+
+      const localUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = localUrl;
+      a.download = `jay-vachhraj-bill-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (document.body.contains(a)) {
+          document.body.removeChild(a);
+        }
+        URL.revokeObjectURL(localUrl);
+      }, 1000);
+
       showToast("બિલ ઇમેજ ડાઉનલોડ થઈ ગઈ!");
     } catch (error) {
       console.error("Receipt download failed:", error);
@@ -523,72 +717,72 @@ export default function CustomerStorePage() {
     }
   };
 
-  const shareOrder = async () => {
-    const total = Object.values(cart).reduce((sum, item) => sum + item.quantity * item.price, 0);
-    const whatsappNumber = storeSettings.whatsappNumber.replace(/\D/g, "");
-    const orderRecord = {
-      customerName: custName.trim(),
-      customerPhone: custPhone.replace(/\D/g, ""),
-      customerAddress: custAddress.trim(),
-      items: Object.values(cart),
-      total,
-      discount: cartDiscount,
-      status: "new",
-      createdAt: serverTimestamp(),
-    };
-    setIsSharingReceipt(true);
+  const handleShareReceipt = async () => {
     try {
-      await addDoc(collection(db, "orders"), orderRecord);
-      localStorage.setItem("jay-store-last-order", JSON.stringify(Object.values(cart)));
-      setLastOrderAvailable(true);
-      if (receiptRef.current) {
-        // Ensure ONLY the receipt card element itself is captured on crisp white paper
-        const image = await toPng(receiptRef.current, { cacheBust: true, pixelRatio: 2, backgroundColor: "#ffffff" });
-        const receiptBlob = await (await fetch(image)).blob();
-        const receiptFile = new File([receiptBlob], "jay-vachhraj-bill.png", { type: "image/png" });
+      setIsSharingReceipt(true);
 
-        // Trigger Web Share API passing the clean image blob directly without adding trailing auto-generated text or links
-        if (navigator.canShare?.({ files: [receiptFile] })) {
-          await navigator.share({ files: [receiptFile], title: "જય વછરાજ જનરલ સ્ટોર - બિલ" });
-          setReceiptOpen(false);
+      // 1. Generate the HD receipt image blob (matching preview exactly)
+      const blob = await capturePreviewReceiptBlob();
+      if (!blob) {
+        alert("બિલ ઇમેજ જનરેટ થઈ શકી નથી.");
+        setIsSharingReceipt(false);
+        return;
+      }
+
+      const fileName = `JVGS_Bill_${Date.now()}.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      // 2. CHECK MOBILE NATIVE FILE SHARING FIRST (Android / iOS / PWA)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: "જય વછરાજ જનરલ સ્ટોર - બિલ"
+            // Keep text strictly empty so WhatsApp receives the IMAGE file directly
+          });
           setIsSharingReceipt(false);
           return;
+        } catch (err: any) {
+          if (err.name === 'AbortError') {
+            // User closed share sheet normally
+            setIsSharingReceipt(false);
+            return;
+          }
+          console.warn("Native file sharing failed, switching to fallback:", err);
         }
+      }
 
-        // Direct clean download if Web Share with files is unavailable
-        const download = document.createElement("a");
-        download.href = image;
-        download.download = "jay-vachhraj-bill.png";
-        download.click();
-      }
+      // 3. DESKTOP / UNSUPPORTED BROWSER FALLBACK:
+      // Auto-download the HD Bill Image directly to customer's computer
+      const localUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = localUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        if (document.body.contains(link)) document.body.removeChild(link);
+        URL.revokeObjectURL(localUrl);
+      }, 400);
+
+      // Launch WhatsApp Web directly with store number (+91 9638009880)
+      const fallbackText = encodeURIComponent(
+        `*જય વછરાજ જનરલ સ્ટોર - નવો ઓર્ડર*\n` +
+        `ગ્રાહક: ${custName || "ગ્રાહક"} (${custPhone || "-"})\n` +
+        `કુલ રકમ: ₹${cartTotal}\n\n` +
+        `✅ (બિલ ઇમેજ ડાઉનલોડ થઈ ગઈ છે, કૃપા કરીને અહીં ફોટો જોડો)`
+      );
+      window.open(`https://api.whatsapp.com/send?phone=919638009880&text=${fallbackText}`, "_blank");
+
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        setIsSharingReceipt(false);
-        return;
-      }
-      if (error instanceof Error && error.message.includes("Missing or insufficient permissions")) {
-        alert("Your order could not be securely saved. Please contact the store or try again later.");
-        setIsSharingReceipt(false);
-        return;
-      }
-      console.warn("Image sharing error:", error);
+      console.error("Share receipt error:", error);
     } finally {
       setIsSharingReceipt(false);
     }
-
-    // Direct WhatsApp fallback with clean details and NO trailing links or promotional watermarks
-    const cleanDetails = Object.values(cart).map((item, idx) => `${idx + 1}. ${item.name} × ${item.quantity} = ₹${(item.quantity * item.price).toFixed(2)}`).join("\n");
-    const cleanMessage = `*જય વછરાજ જનરલ સ્ટોર - ઓર્ડર*\nગ્રાહક: ${custName.trim()} (${custPhone.replace(/\D/g, "")})\n${custAddress.trim() ? `ગામ / વિસ્તાર: ${custAddress.trim()}\n` : ""}\n${cleanDetails}\n\n*કુલ રકમ: ₹${total.toFixed(2)}*`;
-    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(cleanMessage)}`, "_blank", "noopener,noreferrer");
-    setReceiptOpen(false);
   };
 
-  const totalCartCount = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
-  const cartTotal = Object.values(cart).reduce((sum, item) => sum + item.quantity * item.price, 0);
-  const cartDiscount = Object.values(cart).reduce((sum, item) => {
-    const originalPrice = products.find((product) => product.id === item.id)?.originalPrice ?? item.price;
-    return sum + Math.max(0, originalPrice - item.price) * item.quantity;
-  }, 0);
+  const shareReceiptAsImage = handleShareReceipt;
+  const shareOrder = handleShareReceipt;
   const indiaTimeParts = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
   const currentMinutes = Number(indiaTimeParts.find((part) => part.type === "hour")?.value ?? 0) * 60 + Number(indiaTimeParts.find((part) => part.type === "minute")?.value ?? 0);
   const [openingHour = "6", openingMinute = "0"] = storeSettings.openingTime.split(":");
@@ -928,7 +1122,7 @@ export default function CustomerStorePage() {
           <div role="status" aria-label="Loading products" className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
             {Array.from({ length: 8 }, (_, index) => (
               <div key={index} className="overflow-hidden rounded-2xl border border-orange-100 bg-white flex flex-col">
-                <div className="skeleton-shimmer aspect-[4/3]" />
+                <div className="skeleton-shimmer aspect-square" />
                 <div className="p-2.5 sm:p-3 space-y-2 flex flex-col items-center w-full">
                   <div className="skeleton-shimmer h-4 w-3/4 rounded" />
                   <div className="skeleton-shimmer h-3.5 w-1/2 rounded" />
@@ -951,7 +1145,7 @@ export default function CustomerStorePage() {
                     key={item.id}
                     className="bg-white border border-orange-100 rounded-2xl overflow-hidden flex flex-col hover:shadow-md hover:border-orange-200 transition-all duration-200 shadow-xs relative group"
                   >
-                    <div className="relative w-full aspect-[4/3] bg-slate-50 overflow-hidden rounded-t-2xl p-0 m-0">
+                    <div className="relative w-full aspect-square overflow-hidden rounded-t-2xl">
                       <img
                         src={item.photoUrl}
                         alt={item.nameGu}
@@ -961,16 +1155,13 @@ export default function CustomerStorePage() {
                         }`}
                       />
 
-                      {/* Animated 'SPECIAL OFFER' Corner Badge - Absolutely flush to top-left corner */}
+                      {/* Animated 'SPECIAL OFFER' Corner Badge - Absolutely flush to top-left corner with high-glow shimmer */}
                       {isAvailable && (item.offer || item.originalPrice > item.price) && (
-                        <div className="absolute top-0 left-0 z-10 m-0 offer-badge-pulse pointer-events-none origin-top-left">
-                          <div className="glint-effect relative inline-flex items-center justify-center gap-1 w-fit max-w-[100px] px-2.5 py-0.5 rounded-tl-2xl rounded-br-lg rounded-tr-none rounded-bl-none bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-xs border-b border-r border-amber-300/40 select-none">
-                            <span className="sparkle-icon text-amber-200 text-[8px] leading-none shrink-0">✦</span>
-                            <span className="font-bold text-[9px] md:text-[10px] tracking-wider uppercase drop-shadow-xs whitespace-nowrap">
-                              SPECIAL OFFER
-                            </span>
-                            <span className="sparkle-icon-delayed text-amber-200 text-[8px] leading-none shrink-0">✦</span>
-                          </div>
+                        <div className="absolute top-0 left-0 z-20 m-0 px-2 sm:px-2.5 py-0.5 text-[8.5px] sm:text-[9.5px] font-bold tracking-wider text-white bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 rounded-tl-2xl rounded-br-lg shadow-sm flex items-center gap-1 select-none pointer-events-none special-offer-badge overflow-hidden">
+                          <span className="special-offer-shimmer" />
+                          <span className="sparkle-icon text-amber-200 text-[8px] leading-none shrink-0 relative z-10">✦</span>
+                          <span className="uppercase whitespace-nowrap relative z-10">SPECIAL OFFER</span>
+                          <span className="sparkle-icon-delayed text-amber-200 text-[8px] leading-none shrink-0 relative z-10">✦</span>
                         </div>
                       )}
 
@@ -980,8 +1171,8 @@ export default function CustomerStorePage() {
                         </span>
                       )}
 
-                      {/* Favorite Heart & WhatsApp Share Action Icons - Securely anchored to top-right edge */}
-                      <div className="absolute top-2 right-2 flex gap-1.5 z-10">
+                      {/* Favorite Heart & WhatsApp Share Action Icons - Vertical layout to avoid overlap with badge */}
+                      <div className="absolute top-2 right-2 z-20 flex flex-col gap-1.5">
                         <button
                           type="button"
                           onClick={() => toggleFavorite(item.id)}
@@ -1183,11 +1374,12 @@ export default function CustomerStorePage() {
               </button>
             </header>
 
-            <div className="max-h-[68vh] overflow-auto bg-stone-100 p-4 sm:p-6 flex justify-center">
+            <div className="max-h-[75vh] overflow-y-auto px-2 py-1">
               {/* Realistic Thermal Paper Slip */}
               <article
                 ref={receiptRef}
-                className="w-full max-w-[340px] sm:max-w-[360px] bg-white p-5 sm:p-6 text-slate-900 shadow-xl border border-slate-200/90 font-mono text-xs leading-normal select-none"
+                data-receipt-card="true"
+                className="w-full max-w-sm mx-auto bg-white p-5 pb-8 rounded-2xl shadow-sm flex flex-col h-auto overflow-visible text-slate-900 font-mono text-xs leading-normal select-none"
                 style={{
                   backgroundColor: "#ffffff",
                   color: "#0f172a",
@@ -1202,7 +1394,7 @@ export default function CustomerStorePage() {
                     ઝાંઝમેર
                   </p>
                   <p className="text-[11px] font-medium text-slate-600">
-                    સંપર્ક: +{storeSettings.whatsappNumber ? storeSettings.whatsappNumber.replace(/\D/g, "") : "919876543210"}
+                    સંપર્ક: +{storeSettings.whatsappNumber ? storeSettings.whatsappNumber.replace(/\D/g, "") : "919638009880"}
                   </p>
                   <p className="text-[10px] text-slate-500 pt-0.5">
                     તારીખ & સમય: {receiptTimestamp || `${new Date().toLocaleDateString("en-IN")} · ${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}`}
@@ -1297,7 +1489,7 @@ export default function CustomerStorePage() {
                 <div className="border-b border-dashed border-slate-400 my-3" />
 
                 {/* Footer: Barcode placeholder & Simple thank you text */}
-                <div className="flex flex-col items-center justify-center pt-1 text-center">
+                <div className="flex flex-col items-center justify-center my-2 pb-2 text-center">
                   <svg className="w-44 h-9 max-w-full" viewBox="0 0 200 40" xmlns="http://www.w3.org/2000/svg">
                     <rect x="0" y="0" width="200" height="40" fill="#ffffff" />
                     <rect x="10" y="0" width="2" height="34" fill="#0f172a" />
@@ -1348,7 +1540,7 @@ export default function CustomerStorePage() {
                     *JVGS-BILL*
                   </span>
 
-                  <p className="font-bold text-xs text-slate-800 mt-1.5">
+                  <p className="text-center text-xs font-semibold text-gray-700 mt-3">
                     પધારવા બદલ આભાર!
                   </p>
                 </div>
@@ -1373,7 +1565,7 @@ export default function CustomerStorePage() {
               </button>
               <button
                 type="button"
-                onClick={shareOrder}
+                onClick={shareReceiptAsImage}
                 className="min-h-11 flex-1 rounded-xl px-4 py-2 text-xs sm:text-sm font-black text-white bg-orange-500 hover:bg-orange-600 shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5"
               >
                 <Share2 size={16} /> Share Receipt
