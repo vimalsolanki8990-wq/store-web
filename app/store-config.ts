@@ -86,12 +86,47 @@ const ROYAL_AMBER_PALETTE: ThemePalette = {
   accent: "#f59e0b",
 };
 
+export function format12Hour(timeStr: string): string {
+  if (!timeStr) return "6:00 AM";
+  const trimmed = timeStr.trim();
+  if (/am|pm/i.test(trimmed)) {
+    return trimmed;
+  }
+  const parts = trimmed.split(":");
+  const h = parseInt(parts[0], 10);
+  if (isNaN(h)) return trimmed;
+  const m = parts[1] ? parseInt(parts[1], 10) : 0;
+  const minutePart = isNaN(m) ? "00" : m < 10 ? `0${m}` : `${m}`;
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${minutePart} ${period}`;
+}
+
+export function parseTimeToMinutes(timeStr: string, defaultMinutes: number): number {
+  if (!timeStr) return defaultMinutes;
+  const trimmed = timeStr.trim();
+  const match12 = trimmed.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = match12[2] ? parseInt(match12[2], 10) : 0;
+    const period = match12[3].toLowerCase();
+    if (period === "pm" && hours < 12) hours += 12;
+    if (period === "am" && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  }
+  const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
+  }
+  return defaultMinutes;
+}
+
 export const DEFAULT_STORE_SETTINGS: StoreSettings = {
-  noticeEnabled: true,
-  noticeText: "Fresh seasonal spices and pure groundnut oil are now available!",
-  whatsappNumber: "919876543210",
+  noticeEnabled: false,
+  noticeText: "",
+  whatsappNumber: "919638009880",
   address: "Zanzmer, Dhoraji, Gujarat",
-  hours: "7:00 AM - 10:00 PM",
+  hours: "6:00 AM - 9:00 PM",
   storeName: "Jay Vachhraj General Store",
   logoMode: "icon",
   logoUrl: "",
@@ -107,8 +142,8 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   secondaryColor: CLEAN_LIGHT_PALETTE.secondary,
   backgroundColor: CLEAN_LIGHT_PALETTE.background,
   cardStyle: "flat",
-  openingTime: "06:00",
-  closingTime: "21:00",
+  openingTime: "6:00 AM",
+  closingTime: "9:00 PM",
   minimumDeliveryOrder: 200,
   upiId: "",
   upiName: "Jay Vachhraj General Store",
@@ -243,34 +278,49 @@ export function applyThemePreset(current: StoreSettings, presetKey: string): Sto
 }
 
 export function storeThemeCssVars(settings: StoreSettings): Record<string, string> {
-  const isDark = settings.appearance === "dark";
+  const primary = settings.primaryColor || "#ea580c";
+  const secondary = settings.secondaryColor || "#c2410c";
+  const bg = settings.backgroundColor || "#fbf9f5";
+  const accent = settings.accentColor || "#f59e0b";
   return {
-    "--primary": settings.primaryColor || "#ea580c",
-    "--secondary": settings.secondaryColor || "#c2410c",
-    "--background": isDark ? (settings.backgroundColor || "#070b14") : "#fbf9f5",
-    "--accent": settings.accentColor || "#f59e0b",
-    "--store-primary": settings.primaryColor || "#ea580c",
-    "--store-secondary": settings.secondaryColor || "#c2410c",
-    "--store-background": isDark ? (settings.backgroundColor || "#070b14") : "#fbf9f5",
-    "--store-accent": settings.accentColor || "#f59e0b",
-    "--store-foreground": isDark ? "#f8fafc" : "#0f172a",
-    "--store-surface": isDark ? "#111c32" : "#ffffff",
+    "--primary": primary,
+    "--secondary": secondary,
+    "--background": bg,
+    "--accent": accent,
+    "--store-primary": primary,
+    "--store-secondary": secondary,
+    "--store-background": bg,
+    "--store-accent": accent,
+    "--store-foreground": "#0f172a",
+    "--store-surface": "#ffffff",
   };
 }
 
+export function sanitizeWhatsAppNumber(value: unknown): string {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (!digits) return DEFAULT_STORE_SETTINGS.whatsappNumber;
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return digits;
+  if (digits.length === 11 && digits.startsWith("0")) return `91${digits.slice(1)}`;
+  if (digits.startsWith("91")) return digits.slice(0, 12);
+  return `91${digits.slice(0, 10)}`;
+}
+
 export function normalizeStoreSettings(data: Record<string, unknown> = {}): StoreSettings {
-  const preset = THEME_PRESETS[String(data.theme ?? DEFAULT_STORE_SETTINGS.theme)];
-  const fallbackPalette = preset?.palette ?? CLEAN_LIGHT_PALETTE;
-  const accentColor = parseHexColor(data.accentColor, fallbackPalette.accent);
+  const rawNoticeText = String(data.noticeText ?? "");
+  const isTestNotice = /test mode/i.test(rawNoticeText);
+  const openingTime = String(data.openingTime ?? DEFAULT_STORE_SETTINGS.openingTime);
+  const closingTime = String(data.closingTime ?? DEFAULT_STORE_SETTINGS.closingTime);
+  const derivedHours = `${format12Hour(openingTime)} - ${format12Hour(closingTime)}`;
 
   return {
     ...DEFAULT_STORE_SETTINGS,
     ...data,
-    noticeEnabled: data.noticeEnabled !== false,
-    noticeText: String(data.noticeText ?? DEFAULT_STORE_SETTINGS.noticeText),
-    whatsappNumber: String(data.whatsappNumber ?? DEFAULT_STORE_SETTINGS.whatsappNumber),
+    noticeEnabled: data.noticeEnabled === true && !isTestNotice,
+    noticeText: isTestNotice ? "" : rawNoticeText,
+    whatsappNumber: sanitizeWhatsAppNumber(data.whatsappNumber),
     address: String(data.address ?? DEFAULT_STORE_SETTINGS.address),
-    hours: String(data.hours ?? DEFAULT_STORE_SETTINGS.hours),
+    hours: String(data.hours ?? derivedHours),
     storeName: String(data.storeName ?? DEFAULT_STORE_SETTINGS.storeName),
     logoMode: data.logoMode === "image" ? "image" : "icon",
     logoUrl: String(data.logoUrl ?? ""),
@@ -282,16 +332,16 @@ export function normalizeStoreSettings(data: Record<string, unknown> = {}): Stor
       ? data.socialLinks.filter((item): item is SocialLink => Boolean(item && typeof item === "object" && "url" in item))
       : [],
     mapLink: String(data.mapLink ?? DEFAULT_STORE_SETTINGS.mapLink),
-    theme: String(data.theme ?? DEFAULT_STORE_SETTINGS.theme),
+    theme: "cleanLight",
     animationTheme: parseAnimationTheme(data.animationTheme),
-    appearance: data.appearance === "dark" ? "dark" : "light",
-    accentColor,
-    primaryColor: parseHexColor(data.primaryColor, data.theme === "custom" ? accentColor : fallbackPalette.primary),
-    secondaryColor: parseHexColor(data.secondaryColor, fallbackPalette.secondary),
-    backgroundColor: parseHexColor(data.backgroundColor, fallbackPalette.background),
-    cardStyle: parseCardStyle(data.cardStyle),
-    openingTime: String(data.openingTime ?? DEFAULT_STORE_SETTINGS.openingTime),
-    closingTime: String(data.closingTime ?? DEFAULT_STORE_SETTINGS.closingTime),
+    appearance: "light",
+    accentColor: parseHexColor(data.accentColor, CLEAN_LIGHT_PALETTE.accent),
+    primaryColor: parseHexColor(data.primaryColor, CLEAN_LIGHT_PALETTE.primary),
+    secondaryColor: parseHexColor(data.secondaryColor, CLEAN_LIGHT_PALETTE.secondary),
+    backgroundColor: parseHexColor(data.backgroundColor, CLEAN_LIGHT_PALETTE.background),
+    cardStyle: "flat",
+    openingTime,
+    closingTime,
     minimumDeliveryOrder: Math.max(0, Number(data.minimumDeliveryOrder ?? DEFAULT_STORE_SETTINGS.minimumDeliveryOrder) || 0),
     upiId: String(data.upiId ?? ""),
     upiName: String(data.upiName ?? data.storeName ?? DEFAULT_STORE_SETTINGS.upiName),

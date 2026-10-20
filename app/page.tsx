@@ -6,7 +6,7 @@ import { db } from "./firebase";
 import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import html2canvas from "html2canvas";
 import { Camera, Check, CheckCircle2, ExternalLink, FileDown, FolderOpen, Heart, Home, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
-import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, StoreCategory, StoreSettings } from "./store-config";
+import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, format12Hour, parseTimeToMinutes, StoreCategory, StoreSettings } from "./store-config";
 
 interface Product {
   id: string;
@@ -37,6 +37,7 @@ interface CartItem {
   name: string;
   quantity: number;
   price: number;
+  unit?: string;
 }
 
 interface BeforeInstallPromptEvent extends Event {
@@ -340,6 +341,7 @@ export default function CustomerStorePage() {
           name: product.nameEn?.trim() || product.nameGu,
           price: product.price || 0,
           quantity: existing ? existing.quantity + 1 : 1,
+          unit: product.units?.[0] || "1",
         },
       };
     });
@@ -494,6 +496,7 @@ export default function CustomerStorePage() {
     }
 
     try {
+      cachedReceiptBlobRef.current = null;
       setPreparingReceipt(true);
       const now = new Date();
       const dateStr = now.toLocaleDateString("en-IN");
@@ -508,9 +511,9 @@ export default function CustomerStorePage() {
       try {
         const total = Object.values(cart).reduce((sum, item) => sum + item.quantity * item.price, 0);
         const orderRecord = {
-          customerName: custName.trim() || "ગ્રાહક",
+          customerName: custName.trim() || "Customer",
           customerPhone: cleanPhone || "-",
-          customerAddress: custAddress.trim() || "ઝાંઝમેર",
+          customerAddress: custAddress.trim() || "Zanzmer",
           items: Object.values(cart),
           total,
           discount: cartDiscount,
@@ -652,11 +655,11 @@ export default function CustomerStorePage() {
 
     try {
       const canvas = await html2canvas(element, {
-        scale: 3, // Crisp HD resolution
+        scale: 2,
         useCORS: true,
+        logging: false,
         allowTaint: true,
         backgroundColor: "#ffffff",
-        logging: false,
         scrollX: 0,
         scrollY: 0,
         windowWidth: element.scrollWidth,
@@ -681,117 +684,93 @@ export default function CustomerStorePage() {
     }
   };
 
-  const handleDownloadOrShareReceipt = async (): Promise<string | null> => {
-    const canvas = generateNativeReceiptCanvas();
-    return canvas ? canvas.toDataURL("image/png") : null;
+  const generateReceiptImageBlob = async (): Promise<Blob | null> => {
+    if (cachedReceiptBlobRef.current) {
+      return cachedReceiptBlobRef.current;
+    }
+    const blob = await capturePreviewReceiptBlob();
+    if (blob) {
+      cachedReceiptBlobRef.current = blob;
+    }
+    return blob;
   };
 
-  const downloadReceipt = async () => {
-    setIsSharingReceipt(true);
+  const handleDownloadReceipt = async () => {
     try {
-      const blob = await capturePreviewReceiptBlob();
-      if (!blob) {
-        showToast("બિલ ડાઉનલોડ કરવામાં ભૂલ આવી.");
-        return;
-      }
+      const blob = await generateReceiptImageBlob();
+      if (!blob) return;
 
-      const localUrl = URL.createObjectURL(blob);
+      const fileName = `JVGS_Bill_${Date.now()}.png`;
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = localUrl;
-      a.download = `jay-vachhraj-bill-${Date.now()}.png`;
+      a.href = url;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
-        if (document.body.contains(a)) {
-          document.body.removeChild(a);
-        }
-        URL.revokeObjectURL(localUrl);
-      }, 1000);
-
-      showToast("બિલ ઇમેજ ડાઉનલોડ થઈ ગઈ!");
+        if (document.body.contains(a)) document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 200);
     } catch (error) {
-      console.error("Receipt download failed:", error);
-      showToast("બિલ ડાઉનલોડ કરવામાં ભૂલ આવી.");
-    } finally {
-      setIsSharingReceipt(false);
+      console.error("Download failed:", error);
     }
   };
 
   const handleShareReceipt = async () => {
     try {
       setIsSharingReceipt(true);
-
-      // 1. Generate the HD receipt image blob (matching preview exactly)
-      const blob = await capturePreviewReceiptBlob();
+      const blob = await generateReceiptImageBlob();
       if (!blob) {
-        alert("બિલ ઇમેજ જનરેટ થઈ શકી નથી.");
-        setIsSharingReceipt(false);
+        // silently fail if blob generation fails
         return;
       }
 
       const fileName = `JVGS_Bill_${Date.now()}.png`;
-      const file = new File([blob], fileName, { type: "image/png" });
+      const imageFile = new File([blob], fileName, { type: "image/png" });
 
-      // 2. CHECK MOBILE NATIVE FILE SHARING FIRST (Android / iOS / PWA)
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      // Direct native file share (mobile / PWA)
+      if (navigator.canShare && navigator.canShare({ files: [imageFile] })) {
         try {
           await navigator.share({
-            files: [file],
-            title: "જય વછરાજ જનરલ સ્ટોર - બિલ"
-            // Keep text strictly empty so WhatsApp receives the IMAGE file directly
+            files: [imageFile],
+            title: "Jay Vachhraj General Store - Bill",
           });
-          setIsSharingReceipt(false);
-          return;
-        } catch (err: any) {
-          if (err.name === 'AbortError') {
-            // User closed share sheet normally
-            setIsSharingReceipt(false);
-            return;
-          }
-          console.warn("Native file sharing failed, switching to fallback:", err);
+        } catch (err) {
+          if (err.name === "AbortError") return; // user closed share sheet
         }
+      } else {
+        // Fallback: download the image
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          if (document.body.contains(a)) document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 200);
       }
-
-      // 3. DESKTOP / UNSUPPORTED BROWSER FALLBACK:
-      // Auto-download the HD Bill Image directly to customer's computer
-      const localUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = localUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      setTimeout(() => {
-        if (document.body.contains(link)) document.body.removeChild(link);
-        URL.revokeObjectURL(localUrl);
-      }, 400);
-
-      // Launch WhatsApp Web directly with store number (+91 9638009880)
-      const fallbackText = encodeURIComponent(
-        `*જય વછરાજ જનરલ સ્ટોર - નવો ઓર્ડર*\n` +
-        `ગ્રાહક: ${custName || "ગ્રાહક"} (${custPhone || "-"})\n` +
-        `કુલ રકમ: ₹${cartTotal}\n\n` +
-        `✅ (બિલ ઇમેજ ડાઉનલોડ થઈ ગઈ છે, કૃપા કરીને અહીં ફોટો જોડો)`
-      );
-      window.open(`https://api.whatsapp.com/send?phone=919638009880&text=${fallbackText}`, "_blank");
-
     } catch (error) {
-      console.error("Share receipt error:", error);
+      console.error("Share failed:", error);
     } finally {
       setIsSharingReceipt(false);
     }
   };
 
+  const downloadReceipt = handleDownloadReceipt;
   const shareReceiptAsImage = handleShareReceipt;
   const shareOrder = handleShareReceipt;
   const indiaTimeParts = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
   const currentMinutes = Number(indiaTimeParts.find((part) => part.type === "hour")?.value ?? 0) * 60 + Number(indiaTimeParts.find((part) => part.type === "minute")?.value ?? 0);
-  const [openingHour = "6", openingMinute = "0"] = storeSettings.openingTime.split(":");
-  const [closingHour = "21", closingMinute = "0"] = storeSettings.closingTime.split(":");
-  const openingMinutes = Number(openingHour) * 60 + Number(openingMinute);
-  const closingMinutes = Number(closingHour) * 60 + Number(closingMinute);
+  const openingMinutes = parseTimeToMinutes(storeSettings.openingTime, 360);
+  const closingMinutes = parseTimeToMinutes(storeSettings.closingTime, 1260);
   const storeIsOpen = openingMinutes <= closingMinutes
     ? currentMinutes >= openingMinutes && currentMinutes < closingMinutes
     : currentMinutes >= openingMinutes || currentMinutes < closingMinutes;
+  const openTime12 = format12Hour(storeSettings.openingTime || "6:00 AM");
+  const closeTime12 = format12Hour(storeSettings.closingTime || "9:00 PM");
+  const shopTimingText = `Open ${openTime12} - ${closeTime12}`;
 
   const q = deferredSearchQuery.toLowerCase().trim();
   const brands = [...new Set(products.map((product) => product.brand).filter((brand) => brand && brand !== "Other"))];
@@ -815,7 +794,10 @@ export default function CustomerStorePage() {
   const activeSliderIndex = activeBanners.length ? sliderIndex % activeBanners.length : 0;
 
   return (
-    <div className="bg-[#fbf9f5] text-slate-800 min-h-screen font-sans flex flex-col antialiased">
+    <div
+      className="text-slate-800 min-h-screen font-sans flex flex-col antialiased transition-colors duration-200"
+      style={{ backgroundColor: storeSettings.backgroundColor || "#fbf9f5" }}
+    >
       {toastMsg && (
         <div className="fixed top-16 right-4 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs border border-orange-500">
           <Check className="text-emerald-400" size={16} />
@@ -823,27 +805,14 @@ export default function CustomerStorePage() {
         </div>
       )}
 
-      {/* 1. Top Ticker Banner & Store Header: Unified Sticky Container to Prevent Any Overlaps */}
+      {/* Store Header: Unified Sticky Container */}
       <div className="sticky top-0 z-30 shadow-2xs">
-        {/* Top Ticker Banner: Warm orange announcement bar with delivery truck icon */}
-        {storeSettings.noticeEnabled && (
-          <div className="bg-amber-100/70 border-b border-amber-200/70 py-1.5 px-3 text-xs font-semibold text-amber-950 backdrop-blur-xs">
-            <div className="max-w-6xl mx-auto flex items-center justify-center gap-2 text-center">
-              <Truck className="text-amber-700 shrink-0" size={14} aria-hidden="true" />
-              <span className="truncate">
-                {storeSettings.noticeText || "Fresh seasonal spices and pure groundnut oil now available!"}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Store Header & Clean Search Bar */}
         <header className="border-b border-stone-200/80 bg-white/95 backdrop-blur-md">
           <div className="max-w-6xl mx-auto px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2.5 sm:gap-3">
               <div
                 onClick={handleSecretHeaderTap}
-                className="flex items-center gap-3 cursor-pointer select-none active:opacity-90 transition-opacity"
+                className="flex items-center flex-1 min-w-0 cursor-pointer select-none active:opacity-90 transition-opacity"
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
@@ -853,33 +822,50 @@ export default function CustomerStorePage() {
                 }}
                 aria-label="Store details"
               >
-                {storeSettings.logoUrl && !logoFailed ? (
-                  <img
-                    src={storeSettings.logoUrl}
-                    alt={storeSettings.storeName || "Store logo"}
-                    onError={() => setLogoFailed(true)}
-                    className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-2xl object-cover shadow-sm border border-orange-100"
-                  />
-                ) : (
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-2xl flex items-center justify-center text-white shadow-xs overflow-hidden bg-gradient-to-tr from-orange-600 to-amber-500">
-                    <StoreLogoIcon size={22} aria-hidden="true" />
-                  </div>
-                )}
-                <div>
-                  <h1 className="text-base sm:text-xl md:text-2xl font-black leading-tight tracking-tight text-slate-900">
+                {/* 1. Logo (Start): 48px x 48px circular clipped, 1px border #E2E8F0, 10px margin-end */}
+                <div className="mr-2.5 shrink-0">
+                  {storeSettings.logoUrl && !logoFailed ? (
+                    <img
+                      src={storeSettings.logoUrl}
+                      alt={storeSettings.storeName || "Store logo"}
+                      onError={() => setLogoFailed(true)}
+                      className="w-12 h-12 rounded-full object-cover shadow-xs border border-[#E2E8F0]"
+                    />
+                  ) : (
+                    <div
+                      className="w-12 h-12 rounded-full flex items-center justify-center text-white shadow-xs overflow-hidden border border-[#E2E8F0]"
+                      style={{ background: `linear-gradient(135deg, ${storeSettings.primaryColor || '#ea580c'}, ${storeSettings.secondaryColor || '#f59e0b'})` }}
+                    >
+                      <StoreLogoIcon size={22} aria-hidden="true" />
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Store Info (Center / Flexible Weight / flex-1 min-w-0) */}
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-[15px] sm:text-base font-bold text-[#1E293B] truncate leading-tight tracking-tight">
                     {storeSettings.storeName || "Jay Vachhraj General Store"}
                   </h1>
-                  <p className="text-xs text-orange-600 font-semibold mt-0.5">
+                  <p className="text-[11.5px] sm:text-xs font-medium text-[#E65100] truncate mt-0.5 leading-tight">
                     Zanzmer • Fresh, quality groceries
                   </p>
                 </div>
               </div>
-              <span className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] sm:text-xs font-bold ${
-                storeIsOpen ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
-              }`}>
-                <span className={`h-2 w-2 rounded-full ${storeIsOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
-                {storeIsOpen ? "Open" : "Closed"} {storeSettings.openingTime || "06:00"} - {storeSettings.closingTime || "21:00"}
-              </span>
+
+              {/* 3. Status & Timings (End / Right Aligned Compact Vertical Column) */}
+              <div className="shrink-0 flex flex-col items-end justify-center">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  storeIsOpen
+                    ? "bg-[#E8F5E9] text-emerald-800 border border-emerald-200"
+                    : "bg-[#FFEBEE] text-rose-800 border border-rose-200"
+                }`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${storeIsOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
+                  {storeIsOpen ? "Open" : "Closed"}
+                </span>
+                <span className="text-[9.5px] text-[#64748B] font-medium tracking-tight mt-0.5 text-right whitespace-nowrap">
+                  {openTime12} - {closeTime12}
+                </span>
+              </div>
             </div>
 
             {/* Clean Pill Search Bar */}
@@ -1039,9 +1025,10 @@ export default function CustomerStorePage() {
                     setActiveCategory(cat.id);
                     setFavoritesOnly(false);
                   }}
+                  style={isSel ? { backgroundColor: storeSettings.primaryColor || '#ea580c', borderColor: storeSettings.primaryColor || '#ea580c' } : undefined}
                   className={`rounded-2xl shadow-sm p-2 flex flex-col items-center justify-center shrink-0 min-w-20 sm:min-w-24 transition duration-150 active:scale-95 border ${
                     isSel
-                      ? "bg-orange-500 text-white border-orange-500 ring-2 ring-orange-500/20"
+                      ? "text-white ring-2 ring-black/10"
                       : "bg-white border-orange-100 text-slate-700 hover:border-orange-200 hover:bg-orange-50/40"
                   }`}
                 >
@@ -1205,7 +1192,7 @@ export default function CustomerStorePage() {
 
                         {/* Centered Pricing Row: ₹120 / ₹150 / 500g */}
                         <div className="mt-1 flex items-center justify-center flex-wrap gap-1.5">
-                          <span className="font-extrabold text-orange-600 text-sm sm:text-base">
+                          <span className="font-extrabold text-sm sm:text-base" style={{ color: storeSettings.primaryColor || '#ea580c' }}>
                             ₹{item.price}
                           </span>
                           {item.originalPrice > item.price && (
@@ -1219,7 +1206,7 @@ export default function CustomerStorePage() {
                         </div>
                       </div>
 
-                      {/* Smooth Counter State (- 1 +) or Solid Orange + Add to List Button */}
+                      {/* Smooth Counter State (- 1 +) or Solid Brand + Add to List Button */}
                       <div className="w-full pt-0.5">
                         {inCartQty > 0 ? (
                           <div className="flex items-center justify-between w-full rounded-xl bg-orange-50 border border-orange-200 p-0.5 sm:p-1">
@@ -1238,7 +1225,8 @@ export default function CustomerStorePage() {
                               type="button"
                               onClick={() => updateQty(item.id, 1)}
                               aria-label="Increase quantity"
-                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-orange-500 text-white font-bold flex items-center justify-center hover:bg-orange-600 active:scale-95 transition shadow-2xs"
+                              style={{ backgroundColor: storeSettings.primaryColor || '#ea580c' }}
+                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-white font-bold flex items-center justify-center hover:opacity-90 active:scale-95 transition shadow-2xs"
                             >
                               <Plus size={13} />
                             </button>
@@ -1248,11 +1236,12 @@ export default function CustomerStorePage() {
                             type="button"
                             onClick={() => addToCart(item)}
                             disabled={!isAvailable}
+                            style={isAvailable ? { backgroundColor: storeSettings.primaryColor || '#ea580c' } : undefined}
                             className={`w-full py-2 sm:py-2.5 px-3 rounded-xl font-bold text-xs transition duration-150 active:scale-95 flex items-center justify-center gap-1 shadow-xs ${
                               bouncedProductId === item.id ? "cart-add-bounce" : ""
                             } ${
                               isAvailable
-                                ? "bg-orange-500 hover:bg-orange-600 text-white active:bg-orange-700 shadow-sm"
+                                ? "hover:opacity-95 text-white active:scale-95 shadow-sm"
                                 : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
                             }`}
                           >
@@ -1278,7 +1267,10 @@ export default function CustomerStorePage() {
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-4 py-10 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
           <section>
             <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl text-white bg-gradient-to-tr from-orange-600 to-amber-500 shadow-sm">
+              <span
+                className="flex h-11 w-11 items-center justify-center rounded-2xl text-white shadow-sm"
+                style={{ background: `linear-gradient(135deg, ${storeSettings.primaryColor || '#ea580c'}, ${storeSettings.secondaryColor || '#f59e0b'})` }}
+              >
                 {storeSettings.logoMode === "image" && storeSettings.logoUrl ? (
                   <img src={storeSettings.logoUrl} alt="" className="h-full w-full rounded-2xl object-cover" />
                 ) : (
@@ -1291,27 +1283,29 @@ export default function CustomerStorePage() {
               Your neighborhood grocery store for carefully selected, fresh everyday essentials.
             </p>
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
-              Shop Time: {storeSettings.hours}
+              Shop Time: Open {openTime12} - {closeTime12}
             </p>
           </section>
 
           <section>
             <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">Contact & Address</h3>
             <p className="mt-4 text-sm leading-6 text-slate-500">{storeSettings.address}</p>
-            <a
-              href={`tel:+${storeSettings.whatsappNumber.replace(/\D/g, "")}`}
-              className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-slate-700 transition hover:text-orange-600"
-            >
-              <Phone size={16} className="text-orange-500" /> +{storeSettings.whatsappNumber}
-            </a>
-            <a
-              href={`https://wa.me/${storeSettings.whatsappNumber.replace(/\D/g, "")}`}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-[#25D366] transition hover:text-emerald-700"
-            >
-              <MessageCircle size={16} /> Chat on WhatsApp
-            </a>
+            <div className="flex flex-wrap items-center gap-3 mt-2">
+              <a
+                href={`tel:${storeSettings.whatsappNumber ? storeSettings.whatsappNumber.replace(/\D/g, "") : "9638009880"}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-50 text-orange-700 font-semibold text-xs border border-orange-200 hover:bg-orange-100 transition"
+              >
+                📞 +91 96380 09880
+              </a>
+              <a
+                href={`https://api.whatsapp.com/send?phone=${storeSettings.whatsappNumber ? storeSettings.whatsappNumber.replace(/\D/g, "") : "919638009880"}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 font-semibold text-xs border border-green-200 hover:bg-green-100 transition"
+              >
+                💬 Chat on WhatsApp
+              </a>
+            </div>
           </section>
 
           <section>
@@ -1558,17 +1552,18 @@ export default function CustomerStorePage() {
               </button>
               <button
                 type="button"
-                onClick={downloadReceipt}
+                onClick={handleDownloadReceipt}
                 className="min-h-11 flex-1 rounded-xl border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-900 px-4 py-2 text-xs sm:text-sm font-bold transition active:scale-95 flex items-center justify-center gap-1.5 shadow-xs"
               >
                 <FileDown size={16} /> Download Bill
               </button>
               <button
                 type="button"
-                onClick={shareReceiptAsImage}
-                className="min-h-11 flex-1 rounded-xl px-4 py-2 text-xs sm:text-sm font-black text-white bg-orange-500 hover:bg-orange-600 shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5"
+                onClick={handleShareReceipt}
+                disabled={isSharingReceipt}
+                className="min-h-11 flex-1 rounded-xl px-4 py-2 text-xs sm:text-sm font-black text-white bg-orange-500 hover:bg-orange-600 shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5 disabled:opacity-75 disabled:cursor-wait"
               >
-                <Share2 size={16} /> Share Receipt
+                <Share2 size={16} /> {isSharingReceipt ? "Sharing..." : "Share Receipt"}
               </button>
             </div>
           </section>

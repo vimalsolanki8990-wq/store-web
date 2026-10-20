@@ -3,10 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { db, auth, googleProvider } from "../firebase";
 import { isAdminEmail } from "../admin-config";
-import { ArrowDown, ArrowUp, Check, CircleCheck, CircleX, ExternalLink, FileDown, FileUp, FolderOpen, Image as ImageIcon, ImagePlus, LockKeyhole, MapPin, Megaphone, Pencil, Plus, Printer, Search, Settings, ShieldAlert, ShieldCheck, ShoppingBasket, Store, Trash2, X, ClipboardList, Copy, MessageCircle } from "lucide-react";
-import { AppearancePanel } from "./appearance-panel";
+import { ArrowDown, ArrowUp, Check, CircleCheck, CircleX, ClipboardList, Clock, Copy, CreditCard, Database, ExternalLink, FileDown, FileUp, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, LockKeyhole, MapPin, Megaphone, MessageCircle, Pencil, Plus, Printer, Save, Search, Settings, ShieldAlert, ShieldCheck, ShoppingBasket, Store, Tag, Trash2, X } from "lucide-react";
 import { ImageCropModal } from "./image-crop-modal";
-import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, StoreCategory, StoreSettings } from "../store-config";
+import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, format12Hour, normalizeStoreSettings, sanitizeWhatsAppNumber, StoreCategory, StoreSettings } from "../store-config";
 import {
   signInWithPopup,
   signOut,
@@ -118,7 +117,7 @@ export default function VisualAdminProtectedPage() {
 
   // Image Cropper & Adjuster State
   interface CropTarget {
-    type: "product" | "banner" | "logo" | "promo";
+    type: "product" | "banner" | "logo" | "promo" | "upiQr";
     aspectRatio: number;
     outputWidth: number;
     outputHeight: number;
@@ -166,6 +165,9 @@ export default function VisualAdminProtectedPage() {
     } else if (cropTarget.type === "promo") {
       setSettingsForm((current) => ({ ...current, promoImageUrl: croppedDataUrl }));
       showToast("ઓફર બેનર ક્રોપ થઈ ગયો! સેટિંગ્સ સેવ કરો.");
+    } else if (cropTarget.type === "upiQr") {
+      setSettingsForm((current) => ({ ...current, upiQrUrl: croppedDataUrl }));
+      showToast("UPI QR કોડ ક્રોપ થઈ ગયો! સેટિંગ્સ સેવ કરો.");
     }
     setCropModalOpen(false);
   };
@@ -565,7 +567,13 @@ export default function VisualAdminProtectedPage() {
         affectedProducts.slice(start, start + 450).forEach((product) => batch.update(doc(db, "products", product.id), { category: fallbackId }));
         await batch.commit();
       }
-      const persistedSettings = normalizeStoreSettings({ ...settingsForm });
+      const derivedHours = `${format12Hour(settingsForm.openingTime)} - ${format12Hour(settingsForm.closingTime)}`;
+      const sanitizedPhone = sanitizeWhatsAppNumber(settingsForm.whatsappNumber);
+      const persistedSettings = normalizeStoreSettings({
+        ...settingsForm,
+        hours: derivedHours,
+        whatsappNumber: sanitizedPhone,
+      });
       await Promise.all([
         setDoc(doc(db, "storeSettings", "main"), persistedSettings),
         setDoc(doc(db, "store_settings", "main"), persistedSettings),
@@ -893,18 +901,6 @@ export default function VisualAdminProtectedPage() {
           <span>{toastMsg}</span>
         </div>
       )}
-
-      {/* Top Notice */}
-      <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white py-2 px-3 text-xs font-semibold shadow-md relative z-40">
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Megaphone className="notice-megaphone text-amber-100" size={16} />
-            <span className="truncate font-medium">
-              ખાસ નોંધ: દિવાળી તથા શિયાળુ તાજા મસાલા અને શુદ્ધ સીંગતેલના નવા ડબ્બા આવી ગયા છે!
-            </span>
-          </div>
-        </div>
-      </div>
 
       {/* Main Header */}
       <header className="sticky top-0 z-30 border-b border-[#263653] bg-[#0f172a]/95 backdrop-blur-md">
@@ -1777,12 +1773,6 @@ export default function VisualAdminProtectedPage() {
                   <div className="space-y-2">{settingsForm.socialLinks.map((link) => <div key={link.id} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><input aria-label="Social link label" value={link.label} onChange={(event) => setSettingsForm((current) => ({ ...current, socialLinks: current.socialLinks.map((item) => item.id === link.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white" /><input aria-label="Social link URL" type="url" value={link.url} onChange={(event) => setSettingsForm((current) => ({ ...current, socialLinks: current.socialLinks.map((item) => item.id === link.id ? { ...item, url: event.target.value } : item) }))} className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white" /><button type="button" onClick={() => setSettingsForm((current) => ({ ...current, socialLinks: current.socialLinks.filter((item) => item.id !== link.id) }))} aria-label={`Remove ${link.label}`} className="rounded-lg p-2 text-rose-300"><Trash2 size={17} /></button></div>)}</div>
                 </section>
 
-                <AppearancePanel
-                  settings={settingsForm}
-                  onChange={setSettingsForm}
-                  previewProduct={products[0] ? { name: products[0].nameEn?.trim() || products[0].nameGu, price: products[0].price, originalPrice: products[0].originalPrice, photoUrl: products[0].photoUrl } : null}
-                />
-
                 <section id="settings-module-announcement" className="glass-panel interactive-lift scroll-mt-4 space-y-3 p-3 sm:p-4">
                 <label className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-white/20 bg-slate-950/30 px-3 py-2 text-sm font-semibold text-slate-200">
                   <span>Show sticky notice bar</span>
@@ -1811,13 +1801,21 @@ export default function VisualAdminProtectedPage() {
                 <section id="settings-module-payments" className="glass-panel interactive-lift scroll-mt-4 space-y-3 p-3 sm:p-4">
                 <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
                   WhatsApp order mobile number (with country code)
-                  <input
-                    type="tel"
-                    value={settingsForm.whatsappNumber}
-                    onChange={(event) => setSettingsForm((current) => ({ ...current, whatsappNumber: event.target.value }))}
-                    placeholder="919876543210"
-                    className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
-                  />
+                  <div className="flex items-center space-x-2">
+                    <span className="inline-block rounded bg-[#152036] px-2 py-1 text-sm text-white">+91</span>
+                    <input
+                      type="tel"
+                      value={settingsForm.whatsappNumber}
+                      onChange={(event) => {
+                        const val = event.target.value.replace(/\D/g, "");
+                        setSettingsForm((current) => ({ ...current, whatsappNumber: val.slice(0,10) }));
+                      }}
+                      placeholder="1234567890"
+                      maxLength={10}
+                      pattern="[0-9]{10}"
+                      className="flex-1 rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+                    />
+                  </div>
                 </label>
                 <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
                   Store address
@@ -1838,8 +1836,38 @@ export default function VisualAdminProtectedPage() {
                     className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                   />
                 </label>
-                  <h3 className="text-sm font-bold text-white">Business hours & checkout</h3>
-                  <div className="grid gap-3 sm:grid-cols-3"><label className="space-y-1 text-xs text-slate-300">Opens<input type="time" value={settingsForm.openingTime} onChange={(event) => setSettingsForm((current) => ({ ...current, openingTime: event.target.value }))} className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white" /></label><label className="space-y-1 text-xs text-slate-300">Closes<input type="time" value={settingsForm.closingTime} onChange={(event) => setSettingsForm((current) => ({ ...current, closingTime: event.target.value }))} className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white" /></label><label className="space-y-1 text-xs text-slate-300">Minimum delivery ₹<input type="number" min="0" value={settingsForm.minimumDeliveryOrder} onChange={(event) => setSettingsForm((current) => ({ ...current, minimumDeliveryOrder: Number(event.target.value) }))} className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white" /></label></div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="space-y-1 text-xs text-slate-300">
+                      Opens (12-hour)
+                      <input
+                        type="text"
+                        placeholder="6:00 AM"
+                        value={settingsForm.openingTime}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, openingTime: event.target.value }))}
+                        className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white placeholder:text-slate-500"
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs text-slate-300">
+                      Closes (12-hour)
+                      <input
+                        type="text"
+                        placeholder="9:00 PM"
+                        value={settingsForm.closingTime}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, closingTime: event.target.value }))}
+                        className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white placeholder:text-slate-500"
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs text-slate-300">
+                      Minimum delivery ₹
+                      <input
+                        type="number"
+                        min="0"
+                        value={settingsForm.minimumDeliveryOrder}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, minimumDeliveryOrder: Number(event.target.value) }))}
+                        className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white"
+                      />
+                    </label>
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1 text-xs text-slate-300">UPI ID<input value={settingsForm.upiId} onChange={(event) => setSettingsForm((current) => ({ ...current, upiId: event.target.value }))} placeholder="store@upi" className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white" /></label><label className="space-y-1 text-xs text-slate-300">UPI payee name<input value={settingsForm.upiName} onChange={(event) => setSettingsForm((current) => ({ ...current, upiName: event.target.value }))} className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white" /></label><label className="space-y-1 text-xs text-slate-300 sm:col-span-2">UPI QR image URL (optional)<input type="url" value={settingsForm.upiQrUrl} onChange={(event) => setSettingsForm((current) => ({ ...current, upiQrUrl: event.target.value }))} placeholder="Leave blank to generate a payment QR from the UPI ID" className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white" /></label></div>
                 </section>
                 <button
