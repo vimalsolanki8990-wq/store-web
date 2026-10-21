@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { db, auth, googleProvider } from "../firebase";
 import { isAdminEmail } from "../admin-config";
+import { isValidAdminSession, clearAdminSession, getAdminSession, ADMIN_PHONE } from "../admin-session";
 import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, CircleCheck, CircleX, ClipboardList, Clock, Copy, CreditCard, Database, ExternalLink, FileDown, FileUp, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, LockKeyhole, MapPin, Megaphone, MessageCircle, Pencil, Plus, Printer, Save, Search, Settings, ShieldAlert, ShieldCheck, ShoppingBasket, Store, Tag, Trash2, X } from "lucide-react";
 import { ImageCropModal } from "./image-crop-modal";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, format12Hour, normalizeStoreSettings, sanitizeWhatsAppNumber, StoreCategory, StoreSettings } from "../store-config";
@@ -62,8 +64,45 @@ interface StoreOrder {
 type SettingsView = 'menu' | 'profile' | 'hours' | 'categories' | 'payments' | 'offers' | 'backup';
 
 export default function VisualAdminProtectedPage() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [authChecking, setAuthChecking] = useState(true);
+  const router = useRouter();
+  const [sessionVerified, setSessionVerified] = useState<boolean | null>(() => {
+    if (typeof window !== "undefined") {
+      return isValidAdminSession();
+    }
+    return null;
+  });
+
+  // 1. Gatekeeper Route Protection: immediately verify active session on mount
+  useEffect(() => {
+    const verified = isValidAdminSession();
+    if (!verified) {
+      setSessionVerified(false);
+      // Immediately redirect to / within 0.1s without flashing admin UI
+      router.replace("/");
+      return;
+    }
+    setSessionVerified(true);
+  }, [router]);
+
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (typeof window !== "undefined" && isValidAdminSession()) {
+      const session = getAdminSession();
+      if (session) {
+        return {
+          email: `${ADMIN_PHONE} (WhatsApp Verified)`,
+          displayName: "Store Admin",
+          uid: "whatsapp-admin-" + session.token.slice(0, 8),
+        } as unknown as User;
+      }
+    }
+    return null;
+  });
+  const [authChecking, setAuthChecking] = useState(() => {
+    if (typeof window !== "undefined" && isValidAdminSession()) {
+      return false;
+    }
+    return true;
+  });
   const [authError, setAuthError] = useState<string | null>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -186,25 +225,38 @@ export default function VisualAdminProtectedPage() {
 
   // 1. Check Authentication on Load
   useEffect(() => {
+    if (!sessionVerified) return;
+
+    loadData();
+
+    const session = getAdminSession();
+    if (session) {
+      setCurrentUser((prev) => {
+        if (prev && isAdminEmail(prev.email)) return prev;
+        return {
+          email: `${ADMIN_PHONE} (WhatsApp Verified)`,
+          displayName: "Store Admin",
+          uid: "whatsapp-admin-" + session.token.slice(0, 8),
+        } as unknown as User;
+      });
+      setAuthChecking(false);
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         if (isAdminEmail(user.email)) {
           setCurrentUser(user);
           setAuthError(null);
-          loadData();
         } else {
-          setCurrentUser(null);
           setAuthError("This Google account is not authorized to access the admin panel.");
           signOut(auth);
         }
-      } else {
-        setCurrentUser(null);
       }
       setAuthChecking(false);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [sessionVerified]);
 
   // 2. Google Login Trigger
   const handleGoogleLogin = async () => {
@@ -223,8 +275,10 @@ export default function VisualAdminProtectedPage() {
   };
 
   const handleLogout = async () => {
+    clearAdminSession();
     await signOut(auth);
     setCurrentUser(null);
+    router.replace("/");
   };
 
   // 3. Load Firebase Data
@@ -947,6 +1001,11 @@ export default function VisualAdminProtectedPage() {
     }
   };
 
+  // Gatekeeper Route Protection: immediately block direct unauthenticated access to /admin
+  if (sessionVerified !== true) {
+    return <div className="min-h-screen bg-[#070b14]" />;
+  }
+
   // If checking auth status
   if (authChecking) {
     return (
@@ -1066,7 +1125,7 @@ export default function VisualAdminProtectedPage() {
         <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-2 text-xs font-bold sm:text-sm">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-pulse" />
-            <span className="truncate inline-flex items-center gap-2"><ShieldCheck size={16} /> Active Admin: {currentUser.email}</span>
+            <span className="truncate inline-flex items-center gap-2"><ShieldCheck size={16} /> Active Admin: {currentUser?.email || "Verified Admin"}</span>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             {/* 3. Low Stock Alert Counter Badge */}

@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { db } from "./firebase";
 import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import html2canvas from "html2canvas";
-import { Camera, Check, CheckCircle2, ExternalLink, FileDown, FolderOpen, Heart, Home, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
+import { Camera, Check, CheckCircle2, Clock, Copy, ExternalLink, FileDown, FolderOpen, Heart, Home, Loader2, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, format12Hour, parseTimeToMinutes, StoreCategory, StoreSettings } from "./store-config";
+import { generateSecureToken, saveMagicToken, ADMIN_PHONE } from "./admin-session";
 
 interface Product {
   id: string;
@@ -63,32 +64,242 @@ const CATEGORY_ICONS: Record<string, typeof Wheat> = { Wheat, Droplets, Flame, C
 
 export default function CustomerStorePage() {
   const router = useRouter();
-  const secretTapCountRef = useRef(0);
-  const secretTapTimerRef = useRef<NodeJS.Timeout | null>(null);
+  type SecretHoldState = "idle" | "hold_step1_green" | "hold_step2_red" | "magic_modal_open";
 
-  const handleSecretHeaderTap = () => {
-    secretTapCountRef.current += 1;
+  const [secretHoldState, setSecretHoldState] = useState<SecretHoldState>("idle");
+  const secretHoldStateRef = useRef<SecretHoldState>("idle");
+  secretHoldStateRef.current = secretHoldState;
 
-    if (secretTapTimerRef.current) {
-      clearTimeout(secretTapTimerRef.current);
+  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isHoldingRef = useRef(false);
+  const touchActiveRef = useRef(false);
+  const holdStartTimeRef = useRef(0);
+
+  // Magic link generator states
+  const [isGeneratingToken, setIsGeneratingToken] = useState(false);
+  const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+  const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [expiresCountdown, setExpiresCountdown] = useState<string>("05:00");
+
+  const clearHoldTimer = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
     }
+  };
 
-    if (secretTapCountRef.current >= 3) {
-      secretTapCountRef.current = 0;
-      router.push("/admin");
+  const clearInactivityTimer = () => {
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+  };
+
+  const armInactivityTimer = () => {
+    clearInactivityTimer();
+    inactivityTimerRef.current = setTimeout(() => {
+      setSecretHoldState("idle");
+    }, 15000);
+  };
+
+  // Dual-stage timed hold gesture handlers
+  const handleHoldStart = () => {
+    const currentState = secretHoldStateRef.current;
+    if (currentState === "magic_modal_open") return;
+
+    // In red state, single tap opens modal (handled in onClick / pointerUp)
+    if (currentState === "hold_step2_red") {
+      holdStartTimeRef.current = Date.now();
       return;
     }
 
-    secretTapTimerRef.current = setTimeout(() => {
-      secretTapCountRef.current = 0;
-    }, 2000);
+    isHoldingRef.current = true;
+    holdStartTimeRef.current = Date.now();
+    clearHoldTimer();
+    clearInactivityTimer();
+
+    if (currentState === "idle") {
+      // Timer 1 (5000ms continuous hold)
+      holdTimerRef.current = setTimeout(() => {
+        if (!isHoldingRef.current) return;
+        try {
+          if (typeof navigator !== "undefined" && navigator.vibrate) {
+            navigator.vibrate(200);
+          }
+        } catch {}
+        setSecretHoldState("hold_step1_green");
+        armInactivityTimer();
+
+        // If user maintains continuous hold, start Timer 2 seamlessly
+        holdTimerRef.current = setTimeout(() => {
+          if (!isHoldingRef.current) return;
+          try {
+            if (typeof navigator !== "undefined" && navigator.vibrate) {
+              navigator.vibrate(300);
+            }
+          } catch {}
+          setSecretHoldState("hold_step2_red");
+          armInactivityTimer();
+        }, 5000);
+      }, 5000);
+    } else if (currentState === "hold_step1_green") {
+      // Timer 2 (5000ms continuous hold while in hold_step1_green)
+      holdTimerRef.current = setTimeout(() => {
+        if (!isHoldingRef.current) return;
+        try {
+          if (typeof navigator !== "undefined" && navigator.vibrate) {
+            navigator.vibrate(300);
+          }
+        } catch {}
+        setSecretHoldState("hold_step2_red");
+        armInactivityTimer();
+      }, 5000);
+    }
   };
+
+  const handleHoldEnd = () => {
+    const currentState = secretHoldStateRef.current;
+    if (!isHoldingRef.current) return;
+    isHoldingRef.current = false;
+
+    if (currentState === "idle") {
+      // Released before 5000ms: cancel timer and reset to idle
+      clearHoldTimer();
+      setSecretHoldState("idle");
+    } else if (currentState === "hold_step1_green") {
+      // If released while attempting step 2 hold before 5000ms:
+      if (holdTimerRef.current) {
+        clearHoldTimer();
+        setSecretHoldState("idle");
+      } else {
+        armInactivityTimer();
+      }
+    } else if (currentState === "hold_step2_red") {
+      armInactivityTimer();
+    }
+  };
+
+  const handleSecretIconClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (secretHoldStateRef.current === "hold_step2_red") {
+      clearInactivityTimer();
+      clearHoldTimer();
+      setSecretHoldState("magic_modal_open");
+    }
+  };
+
+  const onTouchStartSecret = (e: React.TouchEvent) => {
+    touchActiveRef.current = true;
+    handleHoldStart();
+  };
+
+  const onTouchEndSecret = () => {
+    handleHoldEnd();
+    if (secretHoldStateRef.current === "hold_step2_red") {
+      const duration = Date.now() - holdStartTimeRef.current;
+      if (duration < 800) {
+        clearInactivityTimer();
+        clearHoldTimer();
+        setSecretHoldState("magic_modal_open");
+      }
+    }
+    setTimeout(() => {
+      touchActiveRef.current = false;
+    }, 400);
+  };
+
+  const onTouchCancelSecret = () => {
+    handleHoldEnd();
+    touchActiveRef.current = false;
+  };
+
+  const onMouseDownSecret = (e: React.MouseEvent) => {
+    if (touchActiveRef.current) return;
+    if (e.button !== 0) return;
+    handleHoldStart();
+  };
+
+  const onMouseUpSecret = () => {
+    if (touchActiveRef.current) return;
+    handleHoldEnd();
+  };
+
+  const onMouseLeaveSecret = () => {
+    if (touchActiveRef.current) return;
+    handleHoldEnd();
+  };
+
+  const handleCloseSecretModal = () => {
+    setSecretHoldState("idle");
+    setGeneratedToken(null);
+    setTokenExpiresAt(null);
+    setLinkCopied(false);
+    clearHoldTimer();
+    clearInactivityTimer();
+  };
+
+  // WhatsApp Magic Link generation
+  const handleGenerateAdminMagicLink = async () => {
+    try {
+      setIsGeneratingToken(true);
+      const token = generateSecureToken();
+      const record = await saveMagicToken(token);
+      
+      setGeneratedToken(token);
+      setTokenExpiresAt(record.expiresAt);
+      setLinkCopied(false);
+
+      const magicUrl = `https://vachhraj-store.web.app/admin/verify?token=${token}`;
+      const whatsappUrl = `https://wa.me/919638009880?text=${encodeURIComponent(
+        `Jay Vachhraj Store Admin Login: ${magicUrl}`
+      )}`;
+
+      window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error("Failed to generate magic token:", err);
+    } finally {
+      setIsGeneratingToken(false);
+    }
+  };
+
+  // Countdown for token expiration inside modal
+  useEffect(() => {
+    if (!tokenExpiresAt || secretHoldState !== "magic_modal_open") return;
+
+    const updateCountdown = () => {
+      const diff = Math.max(0, Math.floor((tokenExpiresAt - Date.now()) / 1000));
+      const mins = Math.floor(diff / 60);
+      const secs = diff % 60;
+      setExpiresCountdown(
+        `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+      );
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [tokenExpiresAt, secretHoldState]);
+
+  // Esc key modal dismissal
+  useEffect(() => {
+    if (secretHoldState !== "magic_modal_open") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleCloseSecretModal();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [secretHoldState]);
 
   useEffect(() => {
     return () => {
-      if (secretTapTimerRef.current) {
-        clearTimeout(secretTapTimerRef.current);
-      }
+      clearHoldTimer();
+      clearInactivityTimer();
     };
   }, []);
 
@@ -795,7 +1006,7 @@ export default function CustomerStorePage() {
 
   return (
     <div
-      className="text-slate-800 min-h-screen font-sans flex flex-col antialiased transition-colors duration-200"
+      className="text-slate-800 min-h-screen font-sans flex flex-col antialiased transition-colors duration-200 pb-28 sm:pb-20"
       style={{ backgroundColor: storeSettings.backgroundColor || "#fbf9f5" }}
     >
       {toastMsg && (
@@ -811,15 +1022,7 @@ export default function CustomerStorePage() {
           <div className="max-w-6xl mx-auto px-4 py-3">
             <div className="flex items-center justify-between gap-2.5 sm:gap-3">
               <div
-                onClick={handleSecretHeaderTap}
-                className="flex items-center flex-1 min-w-0 cursor-pointer select-none active:opacity-90 transition-opacity"
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    handleSecretHeaderTap();
-                  }
-                }}
+                className="flex items-center flex-1 min-w-0 select-none"
                 aria-label="Store details"
               >
                 {/* 1. Logo (Start): 48px x 48px circular clipped, 1px border #E2E8F0, 10px margin-end */}
@@ -948,7 +1151,7 @@ export default function CustomerStorePage() {
         </header>
       </div>
 
-      <main className="max-w-6xl mx-auto px-4 py-4 w-full flex-1 pb-28">
+      <main className="max-w-6xl mx-auto px-4 py-4 w-full flex-1 pb-12 sm:pb-16">
         {/* Active Promotional Banners Hero Slider: Constrained to max-h-52 mobile / max-h-72 desktop */}
         {activeBanners.length > 0 && (
           <div className="mt-4 sm:mt-6 mb-6 relative rounded-3xl overflow-hidden shadow-xs border border-stone-200/80 bg-white">
@@ -1277,7 +1480,7 @@ export default function CustomerStorePage() {
                   <StoreLogoIcon size={22} />
                 )}
               </span>
-              <h2 className="text-lg font-black text-slate-900">{storeSettings.storeName}</h2>
+              <h2 className="text-lg font-black text-slate-900">{storeSettings.storeName || "Jay Vachhraj General Store"}</h2>
             </div>
             <p className="mt-4 text-sm leading-6 text-slate-500">
               Your neighborhood grocery store for carefully selected, fresh everyday essentials.
@@ -1350,10 +1553,212 @@ export default function CustomerStorePage() {
             </div>
           </section>
         </div>
-        <div className="border-t border-slate-200 px-4 py-4 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} {storeSettings.storeName}. All rights reserved. <span className="mx-2">·</span> <span aria-live="polite">{viewCount.toLocaleString()} visits</span>
+        <div className="border-t border-slate-200 px-4 py-4 text-center text-xs sm:text-sm text-slate-500 font-medium select-none">
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition-all duration-300 select-none ${
+              secretHoldState === "idle"
+                ? "text-slate-500 hover:text-slate-700 cursor-default"
+                : secretHoldState === "hold_step1_green"
+                ? "bg-emerald-500/15 text-emerald-600 ring-2 ring-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.7)] font-black animate-pulse"
+                : secretHoldState === "hold_step2_red"
+                ? "bg-rose-500/20 text-rose-600 ring-2 ring-rose-500 shadow-[0_0_22px_rgba(244,63,94,0.85)] font-black animate-bounce cursor-pointer active:scale-95"
+                : "text-slate-500"
+            }`}
+            onTouchStart={onTouchStartSecret}
+            onTouchEnd={onTouchEndSecret}
+            onTouchCancel={onTouchCancelSecret}
+            onMouseDown={onMouseDownSecret}
+            onMouseUp={onMouseUpSecret}
+            onMouseLeave={onMouseLeaveSecret}
+            onClick={handleSecretIconClick}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            style={{
+              touchAction: "none",
+              userSelect: "none",
+              WebkitUserSelect: "none",
+              WebkitTouchCallout: "none",
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label="Store copyright key"
+          >
+            <span className="font-extrabold text-sm leading-none">©</span>
+            <span>{new Date().getFullYear()} {storeSettings.storeName || "Jay Vachhraj General Store"}</span>
+            {secretHoldState === "hold_step1_green" && (
+              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-emerald-500 text-white shadow-xs">
+                ● STEP 1 READY
+              </span>
+            )}
+            {secretHoldState === "hold_step2_red" && (
+              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-rose-600 text-white shadow-xs animate-pulse">
+                ● TAP TO UNLOCK
+              </span>
+            )}
+          </span>
+          {" "}. All rights reserved. • <span aria-live="polite">{(viewCount || 0).toLocaleString()} visits</span>
         </div>
       </footer>
+
+      {/* Secret Admin Verification Modal */}
+      {secretHoldState === "magic_modal_open" && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-verify-modal-title"
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-in fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleCloseSecretModal();
+            }
+          }}
+        >
+          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-slate-700 bg-gradient-to-b from-[#111c32] to-[#0c1322] p-6 text-slate-100 shadow-2xl shadow-black/80 sm:p-7 animate-in zoom-in-95">
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={handleCloseSecretModal}
+              aria-label="Close modal"
+              className="absolute right-4 top-4 rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Shield Icon Header */}
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-orange-400/25 bg-orange-500/10 text-orange-400 shadow-lg shadow-orange-950/20">
+              <ShieldCheck size={28} />
+            </div>
+
+            <p className="text-center text-[10px] font-black uppercase tracking-[0.24em] text-orange-400">
+              Secret Gatekeeper
+            </p>
+            <h2 id="admin-verify-modal-title" className="text-center text-xl sm:text-2xl font-black text-white mt-1">
+              Admin Verification
+            </h2>
+            <p className="mt-2 text-center text-xs leading-5 text-slate-400">
+              Dual-stage timed hold verified. Generate a one-click WhatsApp magic link to authenticate the admin session.
+            </p>
+
+            {/* Target Admin Mobile Card */}
+            <div className="mt-5 rounded-2xl border border-slate-700/80 bg-slate-900/80 p-3.5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <MessageCircle size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Target Admin Mobile
+                  </div>
+                  <div className="text-xs sm:text-sm font-black text-emerald-300 truncate">
+                    +91 96380 09880
+                  </div>
+                </div>
+              </div>
+              <span className="shrink-0 rounded-lg bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                Authorized
+              </span>
+            </div>
+
+            {/* Action or Active Link State */}
+            {!generatedToken ? (
+              <div className="mt-6 space-y-3">
+                <button
+                  type="button"
+                  onClick={handleGenerateAdminMagicLink}
+                  disabled={isGeneratingToken}
+                  className="flex min-h-12 w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:opacity-75 disabled:cursor-wait"
+                >
+                  {isGeneratingToken ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      <span>Generating Secure Token...</span>
+                    </>
+                  ) : (
+                    <>
+                      <MessageCircle size={18} />
+                      <span>Generate Secure Admin Link</span>
+                    </>
+                  )}
+                </button>
+                <p className="text-center text-[11px] text-slate-500">
+                  Generates a single-use 32-hex token expiring in 5 minutes.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-5 space-y-3 animate-in fade-in">
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-3.5 text-center">
+                  <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-300">
+                    <CheckCircle2 size={15} />
+                    <span>WhatsApp Dispatched</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-300">
+                    <Clock size={14} className="text-orange-400" />
+                    <span>Expires in:</span>
+                    <span className="font-mono font-black text-orange-400">{expiresCountdown}</span>
+                  </div>
+                  <div className="mt-2 font-mono text-[11px] text-slate-400 bg-slate-900/80 rounded-lg py-1 px-2 border border-slate-800 break-all select-all">
+                    {generatedToken.slice(0, 10)}...{generatedToken.slice(-10)}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href={`https://wa.me/919638009880?text=${encodeURIComponent(
+                      `Jay Vachhraj Store Admin Login: https://vachhraj-store.web.app/admin/verify?token=${generatedToken}`
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white shadow-sm transition active:scale-95"
+                  >
+                    <MessageCircle size={15} />
+                    <span>Re-open WhatsApp</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const url = `https://vachhraj-store.web.app/admin/verify?token=${generatedToken}`;
+                      try {
+                        await navigator.clipboard.writeText(url);
+                        setLinkCopied(true);
+                        setTimeout(() => setLinkCopied(false), 2500);
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                    className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-2 text-xs font-bold text-slate-200 shadow-sm transition active:scale-95"
+                  >
+                    {linkCopied ? (
+                      <>
+                        <Check size={15} className="text-emerald-400" />
+                        <span className="text-emerald-400">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={15} />
+                        <span>Copy Link</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    router.push(`/admin/verify?token=${generatedToken}`);
+                  }}
+                  className="w-full flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 px-3 py-2 text-xs font-bold transition active:scale-95"
+                >
+                  <ExternalLink size={14} />
+                  <span>Verify on this device now</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Realistic Thermal Receipt Modal */}
       {isReceiptOpen && (
