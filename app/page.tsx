@@ -7,11 +7,13 @@ import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTim
 import html2canvas from "html2canvas";
 import { Camera, Check, CheckCircle2, Clock, Copy, ExternalLink, FileDown, FolderOpen, Heart, Home, Loader2, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, format12Hour, parseTimeToMinutes, StoreCategory, StoreSettings } from "./store-config";
-import { generateSecureToken, saveMagicToken, AUTHORIZED_ADMINS, AdminProfile, ADMIN_PHONE } from "./admin-session";
+import AdminStealthAuthModal from "./components/AdminStealthAuthModal";
+import { matchesGroceryQuery } from "./lib/searchUtils";
 
 interface Product {
   id: string;
-  nameGu: string;
+  name?: string;
+  nameGu?: string;
   nameEn?: string;
   category: string;
   units: string[];
@@ -64,248 +66,103 @@ const CATEGORY_ICONS: Record<string, typeof Wheat> = { Wheat, Droplets, Flame, C
 
 export default function CustomerStorePage() {
   const router = useRouter();
-  type SecretHoldState = "idle" | "hold_step1_green" | "hold_step2_red" | "magic_modal_open";
-
-  const [secretHoldState, setSecretHoldState] = useState<SecretHoldState>("idle");
-  const secretHoldStateRef = useRef<SecretHoldState>("idle");
-  secretHoldStateRef.current = secretHoldState;
-
-  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isHoldingRef = useRef(false);
+  // Stealth Admin Gatekeeper (5s Hold -> Green Border -> 3-Tap Logo -> PIN 1997 -> Google Multi-Admin Auth)
+  const [logoPrimedGreen, setLogoPrimedGreen] = useState(false);
+  const [isStealthAuthOpen, setIsStealthAuthOpen] = useState(false);
+  const logoHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const logoInactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const logoTapCountRef = useRef(0);
+  const isLogoHoldingRef = useRef(false);
   const touchActiveRef = useRef(false);
-  const holdStartTimeRef = useRef(0);
 
-  // Magic link generator states
-  const [selectedAdminId, setSelectedAdminId] = useState<string>(AUTHORIZED_ADMINS[0].id);
-  const selectedAdmin = AUTHORIZED_ADMINS.find((a) => a.id === selectedAdminId) || AUTHORIZED_ADMINS[0];
-  const [targetAdminProfile, setTargetAdminProfile] = useState<AdminProfile>(AUTHORIZED_ADMINS[0]);
-  const [isGeneratingToken, setIsGeneratingToken] = useState(false);
-  const [generatedToken, setGeneratedToken] = useState<string | null>(null);
-  const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [expiresCountdown, setExpiresCountdown] = useState<string>("05:00");
-
-  const clearHoldTimer = () => {
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
+  const clearLogoHoldTimer = () => {
+    if (logoHoldTimerRef.current) {
+      clearTimeout(logoHoldTimerRef.current);
+      logoHoldTimerRef.current = null;
     }
   };
 
-  const clearInactivityTimer = () => {
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
+  const clearLogoInactivityTimer = () => {
+    if (logoInactivityTimerRef.current) {
+      clearTimeout(logoInactivityTimerRef.current);
+      logoInactivityTimerRef.current = null;
     }
   };
 
-  const armInactivityTimer = () => {
-    clearInactivityTimer();
-    inactivityTimerRef.current = setTimeout(() => {
-      setSecretHoldState("idle");
-    }, 15000);
+  const handleLogoHoldStart = () => {
+    if (logoPrimedGreen) return;
+
+    isLogoHoldingRef.current = true;
+    clearLogoHoldTimer();
+    clearLogoInactivityTimer();
+
+    // 5-second continuous hold to trigger green border
+    logoHoldTimerRef.current = setTimeout(() => {
+      if (!isLogoHoldingRef.current) return;
+      try {
+        if (typeof navigator !== "undefined" && navigator.vibrate) {
+          navigator.vibrate([150, 50, 150]);
+        }
+      } catch {}
+
+      setLogoPrimedGreen(true);
+      logoTapCountRef.current = 0;
+
+      // Auto-reset back to idle if 3 taps don't happen within 6 seconds
+      clearLogoInactivityTimer();
+      logoInactivityTimerRef.current = setTimeout(() => {
+        setLogoPrimedGreen(false);
+        logoTapCountRef.current = 0;
+      }, 6000);
+    }, 5000);
   };
 
-  // Dual-stage timed hold gesture handlers
-  const handleHoldStart = () => {
-    const currentState = secretHoldStateRef.current;
-    if (currentState === "magic_modal_open") return;
-
-    // In red state, single tap opens modal (handled in onClick / pointerUp)
-    if (currentState === "hold_step2_red") {
-      holdStartTimeRef.current = Date.now();
-      return;
+  const handleLogoHoldEnd = () => {
+    if (isLogoHoldingRef.current) {
+      isLogoHoldingRef.current = false;
+      if (!logoPrimedGreen) {
+        clearLogoHoldTimer();
+      }
     }
+  };
 
-    isHoldingRef.current = true;
-    holdStartTimeRef.current = Date.now();
-    clearHoldTimer();
-    clearInactivityTimer();
+  const handleLogoClick = (e: React.MouseEvent) => {
+    if (logoPrimedGreen) {
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (currentState === "idle") {
-      // Timer 1 (5000ms continuous hold)
-      holdTimerRef.current = setTimeout(() => {
-        if (!isHoldingRef.current) return;
+      logoTapCountRef.current += 1;
+      try {
+        if (typeof navigator !== "undefined" && navigator.vibrate) {
+          navigator.vibrate(40);
+        }
+      } catch {}
+
+      clearLogoInactivityTimer();
+      logoInactivityTimerRef.current = setTimeout(() => {
+        setLogoPrimedGreen(false);
+        logoTapCountRef.current = 0;
+      }, 6000);
+
+      // On 3rd tap -> open Stealth Admin Modal!
+      if (logoTapCountRef.current >= 3) {
+        clearLogoInactivityTimer();
+        setLogoPrimedGreen(false);
+        logoTapCountRef.current = 0;
+        setIsStealthAuthOpen(true);
         try {
           if (typeof navigator !== "undefined" && navigator.vibrate) {
-            navigator.vibrate(200);
+            navigator.vibrate([80, 40, 160]);
           }
         } catch {}
-        setSecretHoldState("hold_step1_green");
-        armInactivityTimer();
-
-        // If user maintains continuous hold, start Timer 2 seamlessly
-        holdTimerRef.current = setTimeout(() => {
-          if (!isHoldingRef.current) return;
-          try {
-            if (typeof navigator !== "undefined" && navigator.vibrate) {
-              navigator.vibrate(300);
-            }
-          } catch {}
-          setSecretHoldState("hold_step2_red");
-          armInactivityTimer();
-        }, 5000);
-      }, 5000);
-    } else if (currentState === "hold_step1_green") {
-      // Timer 2 (5000ms continuous hold while in hold_step1_green)
-      holdTimerRef.current = setTimeout(() => {
-        if (!isHoldingRef.current) return;
-        try {
-          if (typeof navigator !== "undefined" && navigator.vibrate) {
-            navigator.vibrate(300);
-          }
-        } catch {}
-        setSecretHoldState("hold_step2_red");
-        armInactivityTimer();
-      }, 5000);
-    }
-  };
-
-  const handleHoldEnd = () => {
-    const currentState = secretHoldStateRef.current;
-    if (!isHoldingRef.current) return;
-    isHoldingRef.current = false;
-
-    if (currentState === "idle") {
-      // Released before 5000ms: cancel timer and reset to idle
-      clearHoldTimer();
-      setSecretHoldState("idle");
-    } else if (currentState === "hold_step1_green") {
-      // If released while attempting step 2 hold before 5000ms:
-      if (holdTimerRef.current) {
-        clearHoldTimer();
-        setSecretHoldState("idle");
-      } else {
-        armInactivityTimer();
-      }
-    } else if (currentState === "hold_step2_red") {
-      armInactivityTimer();
-    }
-  };
-
-  const handleSecretIconClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (secretHoldStateRef.current === "hold_step2_red") {
-      clearInactivityTimer();
-      clearHoldTimer();
-      setSecretHoldState("magic_modal_open");
-    }
-  };
-
-  const onTouchStartSecret = (e: React.TouchEvent) => {
-    touchActiveRef.current = true;
-    handleHoldStart();
-  };
-
-  const onTouchEndSecret = () => {
-    handleHoldEnd();
-    if (secretHoldStateRef.current === "hold_step2_red") {
-      const duration = Date.now() - holdStartTimeRef.current;
-      if (duration < 800) {
-        clearInactivityTimer();
-        clearHoldTimer();
-        setSecretHoldState("magic_modal_open");
       }
     }
-    setTimeout(() => {
-      touchActiveRef.current = false;
-    }, 400);
   };
-
-  const onTouchCancelSecret = () => {
-    handleHoldEnd();
-    touchActiveRef.current = false;
-  };
-
-  const onMouseDownSecret = (e: React.MouseEvent) => {
-    if (touchActiveRef.current) return;
-    if (e.button !== 0) return;
-    handleHoldStart();
-  };
-
-  const onMouseUpSecret = () => {
-    if (touchActiveRef.current) return;
-    handleHoldEnd();
-  };
-
-  const onMouseLeaveSecret = () => {
-    if (touchActiveRef.current) return;
-    handleHoldEnd();
-  };
-
-  const handleCloseSecretModal = () => {
-    setSecretHoldState("idle");
-    setGeneratedToken(null);
-    setTokenExpiresAt(null);
-    setLinkCopied(false);
-    setSelectedAdminId(AUTHORIZED_ADMINS[0].id);
-    setTargetAdminProfile(AUTHORIZED_ADMINS[0]);
-    clearHoldTimer();
-    clearInactivityTimer();
-  };
-
-  // WhatsApp Magic Link generation targeting selected admin
-  const handleGenerateAdminMagicLink = async () => {
-    try {
-      setIsGeneratingToken(true);
-      const token = generateSecureToken();
-      const record = await saveMagicToken(token, selectedAdmin);
-      
-      setGeneratedToken(token);
-      setTokenExpiresAt(record.expiresAt);
-      setTargetAdminProfile(selectedAdmin);
-      setLinkCopied(false);
-
-      const magicUrl = `https://vachhraj-store.web.app/admin/verify?token=${token}`;
-      const whatsappUrl = `https://wa.me/${selectedAdmin.phone}?text=${encodeURIComponent(
-        `Jay Vachhraj Store Admin Login: ${magicUrl}`
-      )}`;
-
-      window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      console.error("Failed to generate magic token:", err);
-    } finally {
-      setIsGeneratingToken(false);
-    }
-  };
-
-  // Countdown for token expiration inside modal
-  useEffect(() => {
-    if (!tokenExpiresAt || secretHoldState !== "magic_modal_open") return;
-
-    const updateCountdown = () => {
-      const diff = Math.max(0, Math.floor((tokenExpiresAt - Date.now()) / 1000));
-      const mins = Math.floor(diff / 60);
-      const secs = diff % 60;
-      setExpiresCountdown(
-        `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
-      );
-    };
-
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [tokenExpiresAt, secretHoldState]);
-
-  // Esc key modal dismissal
-  useEffect(() => {
-    if (secretHoldState !== "magic_modal_open") return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        handleCloseSecretModal();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [secretHoldState]);
 
   useEffect(() => {
     return () => {
-      clearHoldTimer();
-      clearInactivityTimer();
+      clearLogoHoldTimer();
+      clearLogoInactivityTimer();
     };
   }, []);
 
@@ -317,6 +174,7 @@ export default function CustomerStorePage() {
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [brandFilter, setBrandFilter] = useState("all");
   const [saleOnly, setSaleOnly] = useState(false);
   const [sortPrice, setSortPrice] = useState("featured");
@@ -327,6 +185,37 @@ export default function CustomerStorePage() {
   const [isListening, setListening] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useState("gu-IN");
   const [sliderIndex, setSliderIndex] = useState(0);
+
+  // Dynamic Sticky Offset tracking for Categories Bar
+  const headerStickyRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    const updateHeaderHeight = () => {
+      if (headerStickyRef.current) {
+        const rect = headerStickyRef.current.getBoundingClientRect();
+        if (rect.height > 0) {
+          setHeaderHeight(Math.round(rect.height));
+        }
+      }
+    };
+
+    updateHeaderHeight();
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && headerStickyRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        updateHeaderHeight();
+      });
+      resizeObserver.observe(headerStickyRef.current);
+    }
+
+    window.addEventListener("resize", updateHeaderHeight);
+    return () => {
+      window.removeEventListener("resize", updateHeaderHeight);
+      resizeObserver?.disconnect();
+    };
+  }, []);
 
   // Cart
   const [cart, setCart] = useState<{ [key: string]: CartItem }>({});
@@ -376,9 +265,11 @@ export default function CustomerStorePage() {
             if (Array.isArray(raw.units)) parsedUnits = raw.units;
             else if (typeof raw.unit === "string") parsedUnits = [raw.unit];
 
+            const itemName = raw.name || raw.nameGu || raw.name_gu || raw.nameEn || raw.name_en || "Grocery Item";
             return {
               id: d.id,
-              nameGu: raw.nameGu || raw.name_gu || "Grocery Item",
+              name: itemName,
+              nameGu: raw.nameGu || raw.name_gu || itemName,
               nameEn: raw.nameEn || raw.name_en || "",
               category: raw.category || "કઠોળ-અનાજ",
               units: parsedUnits,
@@ -395,7 +286,7 @@ export default function CustomerStorePage() {
           const sharedProductId = new URLSearchParams(window.location.search).get("item");
           if (sharedProductId) {
             const sharedProduct = list.find((product) => product.id === sharedProductId);
-            if (sharedProduct) setSearchQuery(sharedProduct.nameEn?.trim() || sharedProduct.nameGu);
+            if (sharedProduct) setSearchQuery(sharedProduct.name || sharedProduct.nameGu || sharedProduct.nameEn || "");
           }
         }
 
@@ -555,7 +446,7 @@ export default function CustomerStorePage() {
         ...prev,
         [key]: {
           id: product.id,
-          name: product.nameEn?.trim() || product.nameGu,
+          name: product.name || product.nameGu || product.nameEn || "Grocery Item",
           price: product.price || 0,
           quantity: existing ? existing.quantity + 1 : 1,
           unit: product.units?.[0] || "1",
@@ -563,9 +454,16 @@ export default function CustomerStorePage() {
       };
     });
 
-    showToast(`${product.nameEn?.trim() || product.nameGu} added to your list.`);
+    showToast(`${product.name || product.nameGu || product.nameEn || "Item"} added to your list.`);
     setBouncedProductId(product.id);
     window.setTimeout(() => setBouncedProductId((active) => active === product.id ? null : active), 500);
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
   };
 
   const startVoiceSearch = () => {
@@ -575,6 +473,7 @@ export default function CustomerStorePage() {
       setSpeechError("Voice search is not available in this browser.");
       return;
     }
+    setSpeechError("");
     const recognition = new Recognition();
     recognition.lang = speechLanguage;
     recognition.interimResults = false;
@@ -597,7 +496,7 @@ export default function CustomerStorePage() {
   };
 
   const shareProduct = (product: Product) => {
-    const title = product.nameEn?.trim() || product.nameGu;
+    const title = product.name || product.nameGu || product.nameEn || "Grocery Item";
     const message = `${title} — ₹${product.price}\n${window.location.origin}/?item=${encodeURIComponent(product.id)}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   };
@@ -608,7 +507,7 @@ export default function CustomerStorePage() {
       if (!previous.length) return;
       const restorable = previous.flatMap((item) => {
         const product = products.find((entry) => entry.id === item.id);
-        return product?.inStock && product.stockCount > 0 ? [[item.id, { ...item, name: product.nameEn?.trim() || product.nameGu, price: product.price, quantity: Math.min(item.quantity, product.stockCount) }] as const] : [];
+        return product?.inStock && product.stockCount > 0 ? [[item.id, { ...item, name: product.name || product.nameGu || product.nameEn || item.name, price: product.price, quantity: Math.min(item.quantity, product.stockCount) }] as const] : [];
       });
       if (!restorable.length) {
         showToast("Your previous items are no longer available.");
@@ -989,19 +888,15 @@ export default function CustomerStorePage() {
   const closeTime12 = format12Hour(storeSettings.closingTime || "9:00 PM");
   const shopTimingText = `Open ${openTime12} - ${closeTime12}`;
 
-  const q = deferredSearchQuery.toLowerCase().trim();
+  const activeSearchQuery = searchQuery.trim() === "" ? "" : deferredSearchQuery;
   const brands = [...new Set(products.map((product) => product.brand).filter((brand) => brand && brand !== "Other"))];
   const filteredProducts = products.filter((p) => {
     const matchesCat = activeCategory === "all" || p.category === activeCategory;
     const matchesBrand = brandFilter === "all" || p.brand === brandFilter;
     const matchesSale = !saleOnly || p.offer || p.originalPrice > p.price;
     const matchesFavorite = !favoritesOnly || favorites.includes(p.id);
-    const matchesSearch =
-      !q ||
-      p.nameGu.toLowerCase().includes(q) ||
-      (p.nameEn && p.nameEn.toLowerCase().includes(q)) ||
-      (storeSettings.categories.find((category) => category.id === p.category)?.name.toLowerCase().includes(q) ?? false) ||
-      p.category.toLowerCase().includes(q);
+    const categoryName = storeSettings.categories.find((category) => category.id === p.category)?.name;
+    const matchesSearch = matchesGroceryQuery(p, activeSearchQuery, categoryName);
     return matchesCat && matchesBrand && matchesSale && matchesFavorite && matchesSearch;
   }).sort((first, second) => sortPrice === "low" ? first.price - second.price : sortPrice === "high" ? second.price - first.price : 0);
 
@@ -1023,7 +918,22 @@ export default function CustomerStorePage() {
       )}
 
       {/* Store Header: Unified Sticky Container */}
-      <div className="sticky top-0 z-30 shadow-2xs">
+      <div ref={headerStickyRef} className="sticky top-0 z-40 shadow-2xs">
+        {Boolean(storeSettings.noticeEnabled && storeSettings.noticeText?.trim()) && (
+          <aside
+            aria-label="Store announcement"
+            className="notice-bar-container relative w-full overflow-hidden bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white py-1.5 sm:py-2 px-3 border-b border-orange-700/30 shadow-xs cursor-default select-none"
+          >
+            <div className="flex items-center overflow-hidden w-full whitespace-nowrap">
+              <div className="animate-notice-marquee font-medium text-xs sm:text-[13px] tracking-wide inline-flex items-center gap-3">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white/20 text-white shrink-0">
+                  <Megaphone size={12} aria-hidden="true" />
+                </span>
+                <span>{storeSettings.noticeText}</span>
+              </div>
+            </div>
+          </aside>
+        )}
         <header className="border-b border-stone-200/80 bg-white/95 backdrop-blur-md">
           <div className="max-w-6xl mx-auto px-4 py-3">
             <div className="flex items-center justify-between gap-2.5 sm:gap-3">
@@ -1032,17 +942,64 @@ export default function CustomerStorePage() {
                 aria-label="Store details"
               >
                 {/* 1. Logo (Start): 48px x 48px circular clipped, 1px border #E2E8F0, 10px margin-end */}
-                <div className="mr-2.5 shrink-0">
+                <div
+                  className={`mr-2.5 shrink-0 relative cursor-pointer select-none rounded-full transition-all duration-300 ${
+                    logoPrimedGreen
+                      ? "ring-4 ring-emerald-500 ring-offset-2 ring-offset-white border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.85)] animate-pulse scale-105"
+                      : "hover:opacity-95"
+                  }`}
+                  onTouchStart={() => {
+                    touchActiveRef.current = true;
+                    handleLogoHoldStart();
+                  }}
+                  onTouchEnd={() => {
+                    handleLogoHoldEnd();
+                    setTimeout(() => {
+                      touchActiveRef.current = false;
+                    }, 400);
+                  }}
+                  onTouchCancel={() => {
+                    handleLogoHoldEnd();
+                    touchActiveRef.current = false;
+                  }}
+                  onMouseDown={(e) => {
+                    if (touchActiveRef.current) return;
+                    if (e.button !== 0) return;
+                    handleLogoHoldStart();
+                  }}
+                  onMouseUp={() => {
+                    if (touchActiveRef.current) return;
+                    handleLogoHoldEnd();
+                  }}
+                  onMouseLeave={() => {
+                    if (touchActiveRef.current) return;
+                    handleLogoHoldEnd();
+                  }}
+                  onClick={handleLogoClick}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  style={{
+                    touchAction: "none",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    WebkitTouchCallout: "none",
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={logoPrimedGreen ? "Tap 3 times to enter stealth gateway" : storeSettings.storeName || "Store logo"}
+                >
                   {storeSettings.logoUrl && !logoFailed ? (
                     <img
                       src={storeSettings.logoUrl}
                       alt={storeSettings.storeName || "Store logo"}
                       onError={() => setLogoFailed(true)}
-                      className="w-12 h-12 rounded-full object-cover shadow-xs border border-[#E2E8F0]"
+                      className="w-12 h-12 rounded-full object-cover shadow-xs border border-[#E2E8F0] pointer-events-none"
                     />
                   ) : (
                     <div
-                      className="w-12 h-12 rounded-full flex items-center justify-center text-white shadow-xs overflow-hidden border border-[#E2E8F0]"
+                      className="w-12 h-12 rounded-full flex items-center justify-center text-white shadow-xs overflow-hidden border border-[#E2E8F0] pointer-events-none"
                       style={{ background: `linear-gradient(135deg, ${storeSettings.primaryColor || '#ea580c'}, ${storeSettings.secondaryColor || '#f59e0b'})` }}
                     >
                       <StoreLogoIcon size={22} aria-hidden="true" />
@@ -1078,16 +1035,24 @@ export default function CustomerStorePage() {
             </div>
 
             {/* Clean Pill Search Bar */}
-            <div className="mt-3 relative flex items-center">
+            <form
+              role="search"
+              onSubmit={(e) => {
+                e.preventDefault();
+                searchInputRef.current?.blur();
+              }}
+              className="mt-3 relative flex items-center w-full"
+            >
               {speechSupported ? (
                 <button
                   type="button"
                   onClick={startVoiceSearch}
                   aria-label="Search by voice"
                   aria-pressed={isListening}
-                  className={`absolute left-3.5 z-10 p-1 rounded-full transition ${
+                  className={`absolute left-3.5 z-10 p-1 rounded-full transition-colors ${
                     isListening ? "text-rose-500 animate-pulse bg-rose-50" : "text-slate-400 hover:text-orange-600"
                   }`}
+                  title="Voice Search"
                 >
                   <Mic size={18} />
                 </button>
@@ -1097,16 +1062,58 @@ export default function CustomerStorePage() {
                 </div>
               )}
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    searchInputRef.current?.blur();
+                  } else if (e.key === "Escape") {
+                    setSearchQuery("");
+                  }
+                }}
                 placeholder="Search products in Gujarati, Hindi or English..."
-                className="w-full rounded-full border border-stone-200 bg-[#fbf9f5]/80 py-2.5 sm:py-3 pl-11 pr-11 text-xs sm:text-sm text-slate-900 placeholder-slate-400 shadow-2xs focus:bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
+                className="w-full rounded-full border border-stone-200 bg-[#fbf9f5]/80 py-2.5 sm:py-3 pl-11 pr-20 text-xs sm:text-sm text-slate-900 placeholder-slate-400 shadow-2xs focus:bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition-all"
               />
-              <div className="absolute right-3.5 pointer-events-none text-slate-400">
-                <Search size={18} />
+
+              {/* Action Buttons on the right: Clear (✕) + Search Lens */}
+              <div className="absolute right-3 flex items-center gap-1.5 z-10">
+                {/* 1. Clear Cross Button (Visible only when text is entered) */}
+                {searchQuery.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery("");
+                      searchInputRef.current?.focus();
+                    }}
+                    className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all focus:outline-none"
+                    title="Clear Search"
+                    aria-label="Clear Search"
+                  >
+                    <X size={16} strokeWidth={2.5} />
+                  </button>
+                )}
+
+                {/* 2. Interactive Search Icon */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (searchQuery.trim().length > 0) {
+                      searchInputRef.current?.blur();
+                    } else {
+                      searchInputRef.current?.focus();
+                    }
+                  }}
+                  className="p-1 text-slate-400 hover:text-orange-600 transition-colors focus:outline-none"
+                  title="Search"
+                  aria-label="Search"
+                >
+                  <Search size={18} strokeWidth={2} />
+                </button>
               </div>
-            </div>
+            </form>
             {speechError && <p role="status" className="mt-1 text-[11px] text-rose-600 text-center">{speechError}</p>}
 
             {/* Quick Filters Pill Bar */}
@@ -1212,9 +1219,13 @@ export default function CustomerStorePage() {
           </div>
         )}
 
-        {/* Category buttons: rounded-2xl bg-white shadow-sm border border-orange-100 p-2 flex flex-col items-center */}
-        <div id="categories-section" className="mt-4 sm:mt-6 mb-6">
-          <div className="flex items-center justify-between mb-3 px-1">
+        {/* Sticky Category Bar Wrapper: Docks below header controls on scroll */}
+        <div
+          id="categories-section"
+          style={headerHeight ? { top: `${headerHeight}px` } : undefined}
+          className="sticky top-[105px] sm:top-[115px] z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm py-2.5 transition-all mt-4 sm:mt-6 mb-6 -mx-4 px-4 sm:-mx-6 sm:px-6"
+        >
+          <div className="flex items-center justify-between mb-2 px-1">
             <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
               <FolderOpen size={15} className="text-orange-500" /> Categories
             </span>
@@ -1222,7 +1233,7 @@ export default function CustomerStorePage() {
               {filteredProducts.length} items
             </span>
           </div>
-          <div className="flex items-start gap-3 sm:gap-4 overflow-x-auto pb-2 pt-1 no-scrollbar scroll-smooth">
+          <div className="flex items-start gap-3 sm:gap-4 overflow-x-auto pb-1.5 pt-0.5 no-scrollbar scroll-smooth">
             {allCategories.map((cat) => {
               const isSel = activeCategory === cat.id;
               const CategoryIcon = CATEGORY_ICONS[cat.icon] ?? Sparkles;
@@ -1238,12 +1249,12 @@ export default function CustomerStorePage() {
                   className={`rounded-2xl shadow-sm p-2 flex flex-col items-center justify-center shrink-0 min-w-20 sm:min-w-24 transition duration-150 active:scale-95 border ${
                     isSel
                       ? "text-white ring-2 ring-black/10"
-                      : "bg-white border-orange-100 text-slate-700 hover:border-orange-200 hover:bg-orange-50/40"
+                      : "bg-slate-50 border border-slate-200 text-slate-700 hover:border-orange-200 hover:bg-orange-50/40"
                   }`}
                 >
                   <div
                     className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition ${
-                      isSel ? "bg-white/20 text-white" : "bg-orange-50 text-orange-600"
+                      isSel ? "bg-white/20 text-white" : "bg-white text-orange-600 border border-slate-100 shadow-2xs"
                     }`}
                   >
                     <CategoryIcon size={20} aria-hidden="true" />
@@ -1344,7 +1355,7 @@ export default function CustomerStorePage() {
                     <div className="relative w-full aspect-square overflow-hidden rounded-t-2xl">
                       <img
                         src={item.photoUrl}
-                        alt={item.nameGu}
+                        alt={item.name || item.nameGu || item.nameEn || "Grocery Item"}
                         loading="lazy"
                         className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
                           !isAvailable ? "grayscale opacity-50" : ""
@@ -1353,7 +1364,7 @@ export default function CustomerStorePage() {
 
                       {/* Animated 'SPECIAL OFFER' Corner Badge - Absolutely flush to top-left corner with high-glow shimmer */}
                       {isAvailable && (item.offer || item.originalPrice > item.price) && (
-                        <div className="absolute top-0 left-0 z-20 m-0 px-2 sm:px-2.5 py-0.5 text-[8.5px] sm:text-[9.5px] font-bold tracking-wider text-white bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 rounded-tl-2xl rounded-br-lg shadow-sm flex items-center gap-1 select-none pointer-events-none special-offer-badge overflow-hidden">
+                        <div className="absolute top-0 left-0 z-10 m-0 px-2 sm:px-2.5 py-0.5 text-[8.5px] sm:text-[9.5px] font-bold tracking-wider text-white bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 rounded-tl-2xl rounded-br-lg shadow-sm flex items-center gap-1 select-none pointer-events-none special-offer-badge overflow-hidden">
                           <span className="special-offer-shimmer" />
                           <span className="sparkle-icon text-amber-200 text-[8px] leading-none shrink-0 relative z-10">✦</span>
                           <span className="uppercase whitespace-nowrap relative z-10">SPECIAL OFFER</span>
@@ -1368,7 +1379,7 @@ export default function CustomerStorePage() {
                       )}
 
                       {/* Favorite Heart & WhatsApp Share Action Icons - Vertical layout to avoid overlap with badge */}
-                      <div className="absolute top-2 right-2 z-20 flex flex-col gap-1.5">
+                      <div className="absolute top-2 right-2 z-10 flex flex-col gap-1.5">
                         <button
                           type="button"
                           onClick={() => toggleFavorite(item.id)}
@@ -1396,7 +1407,7 @@ export default function CustomerStorePage() {
                       <div className="w-full">
                         {/* Centered Product Title */}
                         <h3 className="font-bold text-slate-900 text-xs sm:text-sm line-clamp-2 leading-snug">
-                          {item.nameEn?.trim() || item.nameGu}
+                          {item.name || item.nameGu || item.nameEn}
                         </h3>
 
                         {/* Centered Pricing Row: ₹120 / ₹150 / 500g */}
@@ -1464,8 +1475,17 @@ export default function CustomerStorePage() {
               })}
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
-              No matching products. Try another search or filter.
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500 flex flex-col items-center justify-center gap-3">
+              <p>No matching products. Try another search or filter.</p>
+              {searchQuery.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-xs font-semibold hover:bg-orange-100 transition shadow-2xs"
+                >
+                  <X size={14} /> Clear Search
+                </button>
+              )}
             </div>
           )
         )}
@@ -1560,271 +1580,15 @@ export default function CustomerStorePage() {
           </section>
         </div>
         <div className="border-t border-slate-200 px-4 py-4 text-center text-xs sm:text-sm text-slate-500 font-medium select-none">
-          <span
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl transition-all duration-300 select-none ${
-              secretHoldState === "idle"
-                ? "text-slate-500 hover:text-slate-700 cursor-default"
-                : secretHoldState === "hold_step1_green"
-                ? "bg-emerald-500/15 text-emerald-600 ring-2 ring-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.7)] font-black animate-pulse"
-                : secretHoldState === "hold_step2_red"
-                ? "bg-rose-500/20 text-rose-600 ring-2 ring-rose-500 shadow-[0_0_22px_rgba(244,63,94,0.85)] font-black animate-bounce cursor-pointer active:scale-95"
-                : "text-slate-500"
-            }`}
-            onTouchStart={onTouchStartSecret}
-            onTouchEnd={onTouchEndSecret}
-            onTouchCancel={onTouchCancelSecret}
-            onMouseDown={onMouseDownSecret}
-            onMouseUp={onMouseUpSecret}
-            onMouseLeave={onMouseLeaveSecret}
-            onClick={handleSecretIconClick}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            style={{
-              touchAction: "none",
-              userSelect: "none",
-              WebkitUserSelect: "none",
-              WebkitTouchCallout: "none",
-            }}
-            role="button"
-            tabIndex={0}
-            aria-label="Store copyright key"
-          >
-            <span className="font-extrabold text-sm leading-none">©</span>
-            <span>{new Date().getFullYear()} {storeSettings.storeName || "Jay Vachhraj General Store"}</span>
-            {secretHoldState === "hold_step1_green" && (
-              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-emerald-500 text-white shadow-xs">
-                ● STEP 1 READY
-              </span>
-            )}
-            {secretHoldState === "hold_step2_red" && (
-              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-rose-600 text-white shadow-xs animate-pulse">
-                ● TAP TO UNLOCK
-              </span>
-            )}
-          </span>
-          {" "}. All rights reserved. • <span aria-live="polite">{(viewCount || 0).toLocaleString()} visits</span>
+          <span>&copy; {new Date().getFullYear()} {storeSettings.storeName || "Jay Vachhraj General Store"}. All rights reserved. • <span aria-live="polite">{(viewCount || 0).toLocaleString()} visits</span></span>
         </div>
       </footer>
 
-      {/* Secret Admin Verification Modal */}
-      {secretHoldState === "magic_modal_open" && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="admin-verify-modal-title"
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-in fade-in"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              handleCloseSecretModal();
-            }
-          }}
-        >
-          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-slate-700 bg-gradient-to-b from-[#111c32] to-[#0c1322] p-6 text-slate-100 shadow-2xl shadow-black/80 sm:p-7 animate-in zoom-in-95">
-            {/* Close Button */}
-            <button
-              type="button"
-              onClick={handleCloseSecretModal}
-              aria-label="Close modal"
-              className="absolute right-4 top-4 rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition"
-            >
-              <X size={18} />
-            </button>
-
-            {/* Shield Icon Header */}
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-orange-400/25 bg-orange-500/10 text-orange-400 shadow-lg shadow-orange-950/20">
-              <ShieldCheck size={28} />
-            </div>
-
-            <p className="text-center text-[10px] font-black uppercase tracking-[0.24em] text-orange-400">
-              Secret Gatekeeper
-            </p>
-            <h2 id="admin-verify-modal-title" className="text-center text-xl sm:text-2xl font-black text-white mt-1">
-              Admin Verification
-            </h2>
-            <p className="mt-2 text-center text-xs leading-5 text-slate-400">
-              Dual-stage timed hold verified. Generate a one-click WhatsApp magic link to authenticate the admin session.
-            </p>
-
-            {/* Admin Profile Selector Chips */}
-            {!generatedToken ? (
-              <div className="mt-5 space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                      Select Authorizing Admin
-                    </span>
-                    <span className="text-[10px] text-orange-400 font-bold">
-                      WhatsApp 1-Click
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {AUTHORIZED_ADMINS.map((admin) => {
-                      const isSelected = admin.id === selectedAdminId;
-                      return (
-                        <button
-                          key={admin.id}
-                          type="button"
-                          onClick={() => setSelectedAdminId(admin.id)}
-                          className={`relative flex flex-col p-3 rounded-2xl border text-left transition-all duration-200 active:scale-[0.98] ${
-                            isSelected
-                              ? "border-emerald-500 bg-emerald-950/40 ring-2 ring-emerald-500/80 shadow-lg shadow-emerald-950/40"
-                              : "border-slate-700/80 bg-slate-900/60 hover:bg-slate-800/80 hover:border-slate-600"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-1 w-full">
-                            <span className={`text-xs font-black truncate ${isSelected ? "text-white" : "text-slate-300"}`}>
-                              {admin.name}
-                            </span>
-                            <span
-                              className={`shrink-0 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md border ${
-                                admin.id === "primary"
-                                  ? isSelected
-                                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                                    : "bg-slate-800 text-slate-400 border-slate-700"
-                                  : isSelected
-                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                                  : "bg-slate-800 text-slate-400 border-slate-700"
-                              }`}
-                            >
-                              {admin.id === "primary" ? "Primary" : "Co-Admin"}
-                            </span>
-                          </div>
-                          <div className="mt-1 flex items-center gap-1.5 text-xs">
-                            <MessageCircle size={13} className={isSelected ? "text-emerald-400" : "text-slate-500"} />
-                            <span className={`font-mono text-[11px] font-semibold ${isSelected ? "text-emerald-300" : "text-slate-400"}`}>
-                              {admin.displayPhone}
-                            </span>
-                          </div>
-                          {isSelected && (
-                            <div className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xs">
-                              <Check size={10} strokeWidth={3} />
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="space-y-3 pt-1">
-                  <button
-                    type="button"
-                    onClick={handleGenerateAdminMagicLink}
-                    disabled={isGeneratingToken}
-                    className="flex min-h-12 w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:opacity-75 disabled:cursor-wait"
-                  >
-                    {isGeneratingToken ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" />
-                        <span>Generating Secure Token...</span>
-                      </>
-                    ) : (
-                      <>
-                        <MessageCircle size={18} />
-                        <span>Generate Secure Admin Link ({selectedAdmin.name})</span>
-                      </>
-                    )}
-                  </button>
-                  <p className="text-center text-[11px] text-slate-500">
-                    Dispatches a 5-minute single-use link directly to {selectedAdmin.displayPhone}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-5 space-y-3 animate-in fade-in">
-                {/* Dispatched Admin Details */}
-                <div className="rounded-2xl border border-slate-700/80 bg-slate-900/80 p-3.5 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                      <MessageCircle size={18} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                        Dispatched to {targetAdminProfile.name}
-                      </div>
-                      <div className="text-xs sm:text-sm font-black text-emerald-300 truncate">
-                        {targetAdminProfile.displayPhone}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="shrink-0 rounded-lg bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                    Authorized
-                  </span>
-                </div>
-
-                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-3.5 text-center">
-                  <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-300">
-                    <CheckCircle2 size={15} />
-                    <span>WhatsApp Dispatched</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-300">
-                    <Clock size={14} className="text-orange-400" />
-                    <span>Expires in:</span>
-                    <span className="font-mono font-black text-orange-400">{expiresCountdown}</span>
-                  </div>
-                  <div className="mt-2 font-mono text-[11px] text-slate-400 bg-slate-900/80 rounded-lg py-1 px-2 border border-slate-800 break-all select-all">
-                    {generatedToken.slice(0, 10)}...{generatedToken.slice(-10)}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <a
-                    href={`https://wa.me/${targetAdminProfile.phone}?text=${encodeURIComponent(
-                      `Jay Vachhraj Store Admin Login: https://vachhraj-store.web.app/admin/verify?token=${generatedToken}`
-                    )}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white shadow-sm transition active:scale-95"
-                  >
-                    <MessageCircle size={15} />
-                    <span>Re-open WhatsApp</span>
-                  </a>
-
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const url = `https://vachhraj-store.web.app/admin/verify?token=${generatedToken}`;
-                      try {
-                        await navigator.clipboard.writeText(url);
-                        setLinkCopied(true);
-                        setTimeout(() => setLinkCopied(false), 2500);
-                      } catch {
-                        // ignore
-                      }
-                    }}
-                    className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-2 text-xs font-bold text-slate-200 shadow-sm transition active:scale-95"
-                  >
-                    {linkCopied ? (
-                      <>
-                        <Check size={15} className="text-emerald-400" />
-                        <span className="text-emerald-400">Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={15} />
-                        <span>Copy Link</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    router.push(`/admin/verify?token=${generatedToken}`);
-                  }}
-                  className="w-full flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 px-3 py-2 text-xs font-bold transition active:scale-95"
-                >
-                  <ExternalLink size={14} />
-                  <span>Verify on this device now</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Stealth Admin Authentication Gatekeeper Modal */}
+      <AdminStealthAuthModal
+        isOpen={isStealthAuthOpen}
+        onClose={() => setIsStealthAuthOpen(false)}
+      />
 
       {/* Realistic Thermal Receipt Modal */}
       {isReceiptOpen && (
@@ -1907,9 +1671,7 @@ export default function CustomerStorePage() {
                   <div className="divide-y divide-dashed divide-slate-200 py-1">
                     {Object.values(cart).map((item, index) => {
                       const product = products.find((p) => p.id === item.id);
-                      const nameGu = product?.nameGu || item.name;
-                      const nameEn = product?.nameEn && product.nameEn !== nameGu ? product.nameEn : "";
-                      const itemDisplayName = nameEn ? `${nameGu} (${nameEn})` : nameGu;
+                      const itemDisplayName = product ? (product.name || product.nameGu || product.nameEn || item.name) : item.name;
                       const unitLabel = product?.units?.[0] || "";
 
                       return (

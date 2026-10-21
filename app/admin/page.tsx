@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { db, auth, googleProvider } from "../firebase";
 import { isAdminEmail } from "../admin-config";
-import { isValidAdminSession, clearAdminSession, getAdminSession, ADMIN_PHONE } from "../admin-session";
+import { isValidAdminSession, clearAdminSession, getAdminSession, setGoogleAdminSession, getRemainingSessionSeconds, ADMIN_PHONE } from "../admin-session";
 import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, CircleCheck, CircleX, ClipboardList, Clock, Copy, CreditCard, Database, ExternalLink, FileDown, FileUp, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, LockKeyhole, MapPin, Megaphone, MessageCircle, Pencil, Plus, Printer, Save, Search, Settings, ShieldAlert, ShieldCheck, ShoppingBasket, Store, Tag, Trash2, X } from "lucide-react";
 import { ImageCropModal } from "./image-crop-modal";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, format12Hour, normalizeStoreSettings, sanitizeWhatsAppNumber, StoreCategory, StoreSettings } from "../store-config";
@@ -26,6 +26,7 @@ import {
 
 interface Product {
   id: string;
+  name?: string;
   nameGu: string;
   nameEn?: string;
   category: string;
@@ -72,26 +73,53 @@ export default function VisualAdminProtectedPage() {
     return null;
   });
 
-  // 1. Gatekeeper Route Protection: immediately verify active session on mount
+  // 1. Direct URL Lockout: immediately verify active session on mount
   useEffect(() => {
     const verified = isValidAdminSession();
     if (!verified) {
       setSessionVerified(false);
-      // Immediately redirect to / within 0.1s without flashing admin UI
-      router.replace("/");
+      clearAdminSession();
+      window.location.replace("/");
       return;
     }
     setSessionVerified(true);
   }, [router]);
+
+  // 2. Strict 5-Minute Hard Session Expiry Real-Time Monitor
+  const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<number>(() => {
+    return getRemainingSessionSeconds();
+  });
+
+  useEffect(() => {
+    if (!sessionVerified) return;
+
+    setSessionRemainingSeconds(getRemainingSessionSeconds());
+
+    const interval = setInterval(() => {
+      const remaining = getRemainingSessionSeconds();
+      setSessionRemainingSeconds(remaining);
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        clearAdminSession();
+        try {
+          alert("Session expired for security. Please re-authenticate via the store stealth gatekeeper.");
+        } catch {}
+        window.location.replace("/");
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [sessionVerified]);
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     if (typeof window !== "undefined" && isValidAdminSession()) {
       const session = getAdminSession();
       if (session) {
         return {
-          email: `${session.adminName || "Admin"} (${session.displayPhone || session.phone})`,
-          displayName: session.adminName || "Store Admin",
-          uid: "whatsapp-admin-" + session.token.slice(0, 8),
+          email: session.email || (session.displayPhone ? `${session.adminName || "Admin"} (${session.displayPhone})` : session.adminName || "Admin"),
+          displayName: session.adminName || session.email || "Store Admin",
+          uid: session.adminId || ("admin-" + session.token.slice(0, 8)),
         } as unknown as User;
       }
     }
@@ -234,9 +262,9 @@ export default function VisualAdminProtectedPage() {
       setCurrentUser((prev) => {
         if (prev && isAdminEmail(prev.email)) return prev;
         return {
-          email: `${session.adminName || "Admin"} (${session.displayPhone || session.phone})`,
-          displayName: session.adminName || "Store Admin",
-          uid: "whatsapp-admin-" + session.token.slice(0, 8),
+          email: session.email || (session.displayPhone ? `${session.adminName || "Admin"} (${session.displayPhone})` : session.adminName || "Admin"),
+          displayName: session.adminName || session.email || "Store Admin",
+          uid: session.adminId || ("admin-" + session.token.slice(0, 8)),
         } as unknown as User;
       });
       setAuthChecking(false);
@@ -245,6 +273,9 @@ export default function VisualAdminProtectedPage() {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         if (isAdminEmail(user.email)) {
+          if (user.email) {
+            setGoogleAdminSession({ email: user.email, displayName: user.displayName, uid: user.uid });
+          }
           setCurrentUser(user);
           setAuthError(null);
         } else {
@@ -266,19 +297,24 @@ export default function VisualAdminProtectedPage() {
       if (!isAdminEmail(res.user.email)) {
         setAuthError("This Google account is not authorized to access the admin panel.");
         await signOut(auth);
+      } else {
+        if (res.user.email) {
+          setGoogleAdminSession({ email: res.user.email, displayName: res.user.displayName, uid: res.user.uid });
+        }
+        setCurrentUser(res.user);
       }
-   } catch (error: unknown) {
-  console.error(error);
-  const code = error && typeof error === "object" && "code" in error ? String(error.code) : null;
-  setAuthError(code ?? (error instanceof Error ? error.message : String(error)));
-}
+    } catch (error: unknown) {
+      console.error(error);
+      const code = error && typeof error === "object" && "code" in error ? String(error.code) : null;
+      setAuthError(code ?? (error instanceof Error ? error.message : String(error)));
+    }
   };
 
   const handleLogout = async () => {
     clearAdminSession();
     await signOut(auth);
     setCurrentUser(null);
-    router.replace("/");
+    window.location.replace("/");
   };
 
   // 3. Load Firebase Data
@@ -293,9 +329,11 @@ export default function VisualAdminProtectedPage() {
           if (Array.isArray(raw.units)) parsedUnits = raw.units;
           else if (typeof raw.unit === "string") parsedUnits = [raw.unit];
 
+          const itemName = raw.name || raw.nameGu || raw.name_gu || raw.nameEn || raw.name_en || "Grocery Item";
           return {
             id: d.id,
-            nameGu: raw.nameGu || raw.name_gu || "Grocery Item",
+            name: itemName,
+            nameGu: raw.nameGu || raw.name_gu || itemName,
             nameEn: raw.nameEn || raw.name_en || "",
             category: raw.category || "કઠોળ-અનાજ",
             units: parsedUnits,
@@ -407,7 +445,7 @@ export default function VisualAdminProtectedPage() {
   const openModal = (product?: Product) => {
     if (product) {
       setEditingProduct(product);
-      setFormItemName(product.nameGu || product.nameEn || "");
+      setFormItemName(product.name || product.nameGu || product.nameEn || "");
       setFormCategory(product.category);
       setFormUnits(product.units.join(", "));
       setFormPrice(product.price.toString());
@@ -449,6 +487,7 @@ export default function VisualAdminProtectedPage() {
 
     const payload = {
       id: targetId,
+      name: nameVal,
       nameGu: nameVal,
       name_gu: nameVal,
       nameEn: nameVal,
@@ -613,7 +652,8 @@ export default function VisualAdminProtectedPage() {
   const handleShareProductWhatsApp = (p: Product) => {
     const storeUrl = typeof window !== "undefined" ? window.location.origin : "https://vachhraj-store.web.app";
     const packingText = p.units && p.units.length > 0 ? ` (${p.units.join(", ")})` : "";
-    const text = `🛒 *${p.nameGu}*${p.nameEn ? ` (${p.nameEn})` : ""}\n` +
+    const displayName = p.name || p.nameGu || p.nameEn || "Item";
+    const text = `🛒 *${displayName}*\n` +
       `💰 Price: ₹${p.price}${packingText}\n` +
       `📦 Stock: ${p.inStock ? "In Stock ✅" : "Out of Stock ❌"}\n\n` +
       `🏪 *${storeSettings.storeName}*\n` +
@@ -915,9 +955,15 @@ export default function VisualAdminProtectedPage() {
   };
 
   const downloadCsv = () => {
-    const columns = ["id", "nameGu", "nameEn", "category", "price", "brand", "stockCount", "originalPrice", "offer", "photoUrl"] as const;
+    const columns = ["id", "name", "category", "price", "brand", "stockCount", "originalPrice", "offer", "photoUrl"] as const;
     const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-    const csv = [columns.join(","), ...products.map((product) => columns.map((column) => csvCell(product[column])).join(","))].join("\r\n");
+    const getProductValue = (product: Product, column: typeof columns[number]) => {
+      if (column === "name") {
+        return product.name || product.nameGu || product.nameEn || "";
+      }
+      return product[column as keyof Product] ?? "";
+    };
+    const csv = [columns.join(","), ...products.map((product) => columns.map((column) => csvCell(getProductValue(product, column))).join(","))].join("\r\n");
     const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
@@ -950,16 +996,50 @@ export default function VisualAdminProtectedPage() {
         return cells;
       };
       const headers = parseRow(lines[0]).map((header) => header.trim());
-      const required = ["nameGu", "category", "price"];
-      if (!required.every((header) => headers.includes(header))) throw new Error("Required CSV columns: nameGu, category, price.");
+      const hasNameHeader = headers.some((h) =>
+        ["name", "Item name", "itemName", "item_name", "nameGu", "nameEn"].some((k) => k.toLowerCase() === h.toLowerCase())
+      );
+      const hasCategory = headers.some((h) => h.toLowerCase() === "category");
+      const hasPrice = headers.some((h) => h.toLowerCase() === "price");
+      if (!hasNameHeader || !hasCategory || !hasPrice) {
+        throw new Error("Required CSV columns: name (or Item name / itemName / nameGu), category, price.");
+      }
       const imported = lines.slice(1).map((line, rowIndex) => {
         const values = parseRow(line);
         const record = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])) as Record<string, string>;
-        const nameGu = record.nameGu.trim();
+        const parsedName = (
+          record.name ||
+          record["Item name"] ||
+          record["item name"] ||
+          record.itemName ||
+          record.item_name ||
+          record.nameGu ||
+          record.name_gu ||
+          record.nameEn ||
+          record.name_en ||
+          ""
+        ).trim();
         const price = Number(record.price);
-        if (!nameGu || !Number.isFinite(price) || price < 0) throw new Error(`Invalid product data on row ${rowIndex + 2}.`);
-        const id = record.id.trim() || `csv_${Date.now()}_${rowIndex}`;
-        return { id, nameGu, name_gu: nameGu, nameEn: record.nameEn ?? "", name_en: record.nameEn ?? "", category: record.category, price, brand: record.brand || "Other", stockCount: Math.max(0, Number(record.stockCount || 1)), originalPrice: Number(record.originalPrice || price), offer: record.offer === "true", units: ["1 pc"], inStock: Number(record.stockCount || 1) > 0, in_stock: Number(record.stockCount || 1) > 0, photoUrl: record.photoUrl || "" };
+        if (!parsedName || !Number.isFinite(price) || price < 0) throw new Error(`Invalid product data on row ${rowIndex + 2}.`);
+        const id = record.id?.trim() || `csv_${Date.now()}_${rowIndex}`;
+        return {
+          id,
+          name: parsedName,
+          nameGu: parsedName,
+          name_gu: parsedName,
+          nameEn: record.nameEn || record.name_en || parsedName,
+          name_en: record.nameEn || record.name_en || parsedName,
+          category: record.category || "General",
+          price,
+          brand: record.brand || "Other",
+          stockCount: Math.max(0, Number(record.stockCount || 1)),
+          originalPrice: Number(record.originalPrice || price),
+          offer: record.offer === "true",
+          units: ["1 pc"],
+          inStock: Number(record.stockCount || 1) > 0,
+          in_stock: Number(record.stockCount || 1) > 0,
+          photoUrl: record.photoUrl || ""
+        };
       });
       for (let start = 0; start < imported.length; start += 450) {
         const batch = writeBatch(db);
@@ -1001,9 +1081,13 @@ export default function VisualAdminProtectedPage() {
     }
   };
 
-  // Gatekeeper Route Protection: immediately block direct unauthenticated access to /admin
-  if (sessionVerified !== true) {
-    return <div className="min-h-screen bg-[#070b14]" />;
+  // Direct URL Lockout: immediately block direct unauthenticated access to /admin
+  if (sessionVerified !== true || !currentUser) {
+    if (typeof window !== "undefined") {
+      clearAdminSession();
+      window.location.replace("/");
+    }
+    return <div className="fixed inset-0 z-[9999] bg-[#070b14]" />;
   }
 
   // If checking auth status
@@ -1019,42 +1103,6 @@ export default function VisualAdminProtectedPage() {
     );
   }
 
-  // If NOT Logged In, Show Lock Screen
-  if (!currentUser) {
-    return (
-      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#070b14] px-4 py-10 text-slate-100 sm:px-6">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(249,115,22,0.16),_transparent_55%)]" />
-        <section className="relative w-full max-w-md rounded-3xl border border-[#263653] bg-gradient-to-b from-[#111c32] to-[#0c1322] p-6 text-center shadow-2xl shadow-black/40 sm:p-9">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-orange-400/25 bg-orange-500/10 text-3xl text-orange-300 shadow-lg shadow-orange-950/20 sm:h-[4.5rem] sm:w-[4.5rem]">
-            <LockKeyhole size={29} />
-          </div>
-          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.24em] text-orange-300">JAY VACHHRAJ GENERAL STORE</p>
-          <h1 className="text-xl font-black text-white sm:text-2xl">Admin Sign In</h1>
-          <p className="mb-6 mt-2 text-sm leading-6 text-slate-400">
-            Sign in with your Google account to manage your store.
-          </p>
-
-          {authError && (
-            <div role="alert" className="mb-4 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-left text-xs font-semibold leading-5 text-rose-200">
-              <ShieldAlert className="mr-1 inline" size={15} /> {authError}
-            </div>
-          )}
-
-          <button
-            onClick={handleGoogleLogin}
-            className="flex min-h-12 w-full items-center justify-center gap-3 rounded-2xl border border-white/80 bg-white px-4 py-3 text-sm font-black text-slate-900 shadow-lg shadow-black/20 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-400/40 active:scale-[0.99]"
-          >
-            <span aria-hidden="true" className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-sm font-black text-blue-600">G</span>
-            Continue with Google
-          </button>
-          <p className="mt-5 text-xs leading-5 text-slate-500">
-            Admin access is limited to approved accounts.
-          </p>
-        </section>
-      </main>
-    );
-  }
-
   // Filter & Low Stock Counter
   const lowStockProducts = products.filter((p) => !p.inStock || p.stockCount <= 0);
   const lowStockCount = lowStockProducts.length;
@@ -1065,6 +1113,7 @@ export default function VisualAdminProtectedPage() {
     const matchesCat = activeCategory === "all" || p.category === activeCategory;
     const matchesSearch =
       !q ||
+      ((p.name || p.nameGu || p.nameEn || "").toLowerCase().includes(q)) ||
       p.nameGu.toLowerCase().includes(q) ||
       (p.nameEn && p.nameEn.toLowerCase().includes(q)) ||
       p.category.toLowerCase().includes(q) ||
@@ -1123,9 +1172,22 @@ export default function VisualAdminProtectedPage() {
       {/* Admin Visual Action Bar with Logged In User & Logout */}
       <section aria-label="Admin Controls" className="border-b border-orange-300/20 bg-gradient-to-r from-amber-700 via-orange-700 to-orange-600 px-4 py-3 text-white shadow-lg sm:px-6">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-2 text-xs font-bold sm:text-sm">
+          <div className="flex min-w-0 flex-wrap items-center gap-2.5 text-xs font-bold sm:text-sm">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-pulse" />
             <span className="truncate inline-flex items-center gap-2"><ShieldCheck size={16} /> Active Admin: {currentUser?.email || "Verified Admin"}</span>
+            <div
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono font-bold tracking-tight shadow-xs ${
+                sessionRemainingSeconds <= 60
+                  ? "bg-rose-950/80 border-rose-400 text-rose-200 animate-pulse"
+                  : sessionRemainingSeconds <= 120
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200"
+                  : "bg-black/40 border-emerald-400/50 text-emerald-200"
+              }`}
+              title="Security session expires in 5 minutes. You will be automatically redirected to the store home."
+            >
+              <Clock size={12} className={sessionRemainingSeconds <= 60 ? "text-rose-400 animate-spin" : "text-emerald-300"} />
+              <span>Expires: {Math.floor(sessionRemainingSeconds / 60)}:{(sessionRemainingSeconds % 60).toString().padStart(2, "0")}</span>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             {/* 3. Low Stock Alert Counter Badge */}
@@ -1336,7 +1398,7 @@ export default function VisualAdminProtectedPage() {
                 <div className="relative w-full aspect-[4/3] bg-[#070b14] overflow-hidden">
                   <img
                     src={item.photoUrl}
-                    alt={item.nameGu || item.nameEn}
+                    alt={item.name || item.nameGu || item.nameEn}
                     className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
                       !item.inStock ? "grayscale opacity-50" : ""
                     }`}
@@ -1352,7 +1414,7 @@ export default function VisualAdminProtectedPage() {
                     <button
                       type="button"
                       onClick={() => openModal(item)}
-                      aria-label={`Edit ${item.nameGu || item.nameEn}`}
+                      aria-label={`Edit ${item.name || item.nameGu || item.nameEn}`}
                       className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 bg-amber-400 text-sm font-bold text-slate-950 shadow-lg transition hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                       title="Edit"
                     >
@@ -1360,8 +1422,8 @@ export default function VisualAdminProtectedPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDeleteProduct(item.id, item.nameGu || item.nameEn || "item")}
-                      aria-label={`Delete ${item.nameGu || item.nameEn}`}
+                      onClick={() => handleDeleteProduct(item.id, item.name || item.nameGu || item.nameEn || "item")}
+                      aria-label={`Delete ${item.name || item.nameGu || item.nameEn}`}
                       className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-rose-600 text-sm font-bold text-white shadow-lg transition hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                       title="Delete"
                     >
@@ -1373,9 +1435,9 @@ export default function VisualAdminProtectedPage() {
                 <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
                   <div>
                     <h4 className="line-clamp-1 text-sm font-bold text-white sm:text-base">
-                      {item.nameGu || item.nameEn}
+                      {item.name || item.nameGu || item.nameEn}
                     </h4>
-                    {item.nameEn && item.nameEn !== item.nameGu && (
+                    {item.nameEn && item.nameEn !== (item.name || item.nameGu) && (
                       <p className="line-clamp-1 text-xs text-slate-400">
                         {item.nameEn}
                       </p>

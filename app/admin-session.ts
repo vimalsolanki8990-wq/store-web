@@ -29,8 +29,10 @@ export const ADMIN_PHONE_DIGITS = DEFAULT_ADMIN.phone;
 
 export const MAGIC_LINK_BASE_URL = "https://vachhraj-store.web.app";
 export const TOKEN_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
-export const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+export const SESSION_EXPIRY_MS = 5 * 60 * 1000; // Strict 5-minute hard session expiry
 
+export const AUTH_COOKIE_NAME = "store_admin_auth";
+export const INSTANCE_LOCK_KEY = "admin_instance_lock";
 export const STORAGE_KEY_SESSION = "admin_magic_session";
 export const STORAGE_KEY_TOKEN_PREFIX = "admin_magic_token_";
 
@@ -54,6 +56,8 @@ export interface AdminSessionRecord {
   adminName: string;
   phone: string;
   displayPhone: string;
+  email?: string;
+  instanceId?: string;
 }
 
 export function getAdminById(id: string): AdminProfile | undefined {
@@ -132,27 +136,87 @@ export async function saveMagicToken(
 }
 
 /**
- * Set verified admin session in localStorage & cookie
+ * Helper to get a cookie value by name in browser
+ */
+export function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+/**
+ * Set verified admin session in localStorage & cookie (5-minute hard limit)
  */
 export function setAdminSession(token: string, admin?: AdminProfile): AdminSessionRecord {
   const now = Date.now();
   const chosenAdmin = admin || DEFAULT_ADMIN;
+  const instanceId = "inst_" + Math.random().toString(36).slice(2) + "_" + now.toString(36);
+  const expiresAt = now + SESSION_EXPIRY_MS;
+
   const session: AdminSessionRecord = {
     token,
     verifiedAt: now,
-    expiresAt: now + SESSION_EXPIRY_MS,
+    expiresAt,
     adminId: chosenAdmin.id,
     adminName: chosenAdmin.name,
     phone: chosenAdmin.phone,
     displayPhone: chosenAdmin.displayPhone,
+    instanceId,
   };
 
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(session));
+      sessionStorage.setItem(INSTANCE_LOCK_KEY, instanceId);
       sessionStorage.setItem("admin_session_active", "true");
       sessionStorage.setItem("admin_session_identity", JSON.stringify(chosenAdmin));
-      document.cookie = `${STORAGE_KEY_SESSION}=${token}; path=/; max-age=86400; SameSite=Strict`;
+
+      // 5-minute strict cookie
+      const cookieValue = `${token}.${expiresAt}.${instanceId}`;
+      const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = `${AUTH_COOKIE_NAME}=${cookieValue}; path=/; max-age=300; SameSite=Strict${secureFlag}`;
+      document.cookie = `${STORAGE_KEY_SESSION}=${token}; path=/; max-age=300; SameSite=Strict${secureFlag}`;
+    } catch (e) {
+      console.warn("Failed saving admin session to storage:", e);
+    }
+  }
+
+  return session;
+}
+
+/**
+ * Set verified Google admin session in localStorage & cookie (5-minute hard limit)
+ */
+export function setGoogleAdminSession(user: { email: string; displayName?: string | null; uid?: string }): AdminSessionRecord {
+  const now = Date.now();
+  const token = "google_admin_" + (user.uid || Math.random().toString(36).slice(2) + "_" + now);
+  const instanceId = "inst_" + Math.random().toString(36).slice(2) + "_" + now.toString(36);
+  const expiresAt = now + SESSION_EXPIRY_MS; // Exactly 5 minutes from login
+
+  const session: AdminSessionRecord = {
+    token,
+    verifiedAt: now,
+    expiresAt,
+    adminId: "google_" + (user.uid || "admin"),
+    adminName: user.displayName || user.email.split("@")[0] || "Store Admin",
+    phone: "",
+    displayPhone: user.email,
+    email: user.email,
+    instanceId,
+  };
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(session));
+      sessionStorage.setItem(INSTANCE_LOCK_KEY, instanceId);
+      sessionStorage.setItem("admin_session_active", "true");
+      sessionStorage.setItem("admin_session_identity", JSON.stringify(session));
+
+      // 5-minute strict cookie
+      const cookieValue = `${token}.${expiresAt}.${instanceId}`;
+      const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = `${AUTH_COOKIE_NAME}=${cookieValue}; path=/; max-age=300; SameSite=Strict${secureFlag}`;
+      document.cookie = `${STORAGE_KEY_SESSION}=${token}; path=/; max-age=300; SameSite=Strict${secureFlag}`;
     } catch (e) {
       console.warn("Failed saving admin session to storage:", e);
     }
@@ -177,7 +241,8 @@ export function getAdminSession(): AdminSessionRecord | null {
       return null;
     }
 
-    if (Date.now() > session.expiresAt) {
+    // 5-minute hard expiration check
+    if (Date.now() >= session.expiresAt) {
       clearAdminSession();
       return null;
     }
@@ -190,21 +255,72 @@ export function getAdminSession(): AdminSessionRecord | null {
 }
 
 /**
- * Check if an active session exists
+ * Check if an active, isolated admin session exists on this browser instance
  */
 export function isValidAdminSession(): boolean {
-  return Boolean(getAdminSession());
+  if (typeof window === "undefined") return false;
+
+  const session = getAdminSession();
+  if (!session) return false;
+
+  // 1. Strict 5-minute hard expiry
+  if (Date.now() >= session.expiresAt) {
+    clearAdminSession();
+    return false;
+  }
+
+  // 2. Browser instance isolation: check sessionStorage lock
+  if (session.instanceId) {
+    try {
+      const activeLock = sessionStorage.getItem(INSTANCE_LOCK_KEY);
+      if (!activeLock || activeLock !== session.instanceId) {
+        clearAdminSession();
+        return false;
+      }
+    } catch {
+      clearAdminSession();
+      return false;
+    }
+  }
+
+  // 3. Strict cookie verification
+  const cookieValue = getCookie(AUTH_COOKIE_NAME);
+  if (!cookieValue) {
+    clearAdminSession();
+    return false;
+  }
+  const parts = cookieValue.split(".");
+  const cookieToken = parts[0];
+  if (cookieToken !== session.token) {
+    clearAdminSession();
+    return false;
+  }
+
+  return true;
 }
 
 /**
- * Clear admin session on logout
+ * Calculate remaining seconds of the 5-minute security session
+ */
+export function getRemainingSessionSeconds(): number {
+  if (typeof window === "undefined") return 0;
+  const session = getAdminSession();
+  if (!session) return 0;
+  const remaining = Math.floor((session.expiresAt - Date.now()) / 1000);
+  return Math.max(0, remaining);
+}
+
+/**
+ * Clear admin session across localStorage, sessionStorage, and cookies
  */
 export function clearAdminSession(): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(STORAGE_KEY_SESSION);
+    sessionStorage.removeItem(INSTANCE_LOCK_KEY);
     sessionStorage.removeItem("admin_session_active");
     sessionStorage.removeItem("admin_session_identity");
+    document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; SameSite=Strict`;
     document.cookie = `${STORAGE_KEY_SESSION}=; path=/; max-age=0; SameSite=Strict`;
   } catch (e) {
     console.warn("Failed clearing admin session:", e);
