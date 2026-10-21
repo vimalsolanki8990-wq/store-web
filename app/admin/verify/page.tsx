@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, ShieldAlert, Loader2, LockKeyhole } from "lucide-react";
-import { verifyAndConsumeToken } from "../../admin-session";
+import { verifyAndConsumeToken, AdminProfile } from "../../admin-session";
 
 function AdminTokenVerifier() {
   const router = useRouter();
@@ -11,6 +11,7 @@ function AdminTokenVerifier() {
   const token = searchParams.get("token");
 
   const [status, setStatus] = useState<"verifying" | "success" | "expired">("verifying");
+  const [verifiedAdmin, setVerifiedAdmin] = useState<AdminProfile | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number>(2);
   const hasExecutedRef = useRef(false);
@@ -30,15 +31,16 @@ function AdminTokenVerifier() {
       try {
         const result = await verifyAndConsumeToken(token);
         if (result.success) {
+          setVerifiedAdmin(result.admin || null);
           setStatus("success");
-          setToastMessage("Verification successful! Opening Admin...");
+          setToastMessage(`Welcome, ${result.admin?.name || "Admin"}! Opening panel...`);
           // Redirect cleanly to /admin
           setTimeout(() => {
             router.replace("/admin");
-          }, 600);
+          }, 700);
         } else {
           setStatus("expired");
-          setToastMessage("Link Expired");
+          setToastMessage(result.error || "Link Expired");
           startRedirectToHome();
         }
       } catch (err) {
@@ -111,13 +113,17 @@ function AdminTokenVerifier() {
         </p>
         <h1 className="text-xl sm:text-2xl font-black text-white">
           {status === "verifying" && "Verifying Magic Token"}
-          {status === "success" && "Access Granted"}
+          {status === "success" && (verifiedAdmin ? `Welcome, ${verifiedAdmin.name}` : "Access Granted")}
           {status === "expired" && "Link Expired"}
         </h1>
 
         <p className="mt-3 text-xs sm:text-sm text-slate-400 leading-relaxed">
           {status === "verifying" && "Checking cryptographically signed WhatsApp magic link..."}
-          {status === "success" && "Secure session established. Redirecting to admin dashboard..."}
+          {status === "success" && (
+            <>
+              Secure session established for <span className="text-emerald-400 font-bold">{verifiedAdmin?.name}</span> ({verifiedAdmin?.displayPhone}). Redirecting to admin dashboard...
+            </>
+          )}
           {status === "expired" && (
             <>
               This magic link is invalid or has expired (&gt; 5 mins or already used).

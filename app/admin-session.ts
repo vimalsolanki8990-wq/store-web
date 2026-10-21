@@ -1,8 +1,32 @@
 import { db } from "./firebase";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
-export const ADMIN_PHONE = "+91 96380 09880";
-export const ADMIN_PHONE_DIGITS = "919638009880";
+export interface AdminProfile {
+  id: string;
+  name: string;
+  phone: string;
+  displayPhone: string;
+}
+
+export const AUTHORIZED_ADMINS: AdminProfile[] = [
+  {
+    id: "primary",
+    name: "Dhaval Solanki",
+    phone: "919638009880",
+    displayPhone: "+91 96380 09880",
+  },
+  {
+    id: "secondary",
+    name: "Store Co-Admin",
+    phone: "917600761095",
+    displayPhone: "+91 76007 61095",
+  },
+];
+
+export const DEFAULT_ADMIN: AdminProfile = AUTHORIZED_ADMINS[0];
+export const ADMIN_PHONE = DEFAULT_ADMIN.displayPhone;
+export const ADMIN_PHONE_DIGITS = DEFAULT_ADMIN.phone;
+
 export const MAGIC_LINK_BASE_URL = "https://vachhraj-store.web.app";
 export const TOKEN_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 export const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -15,7 +39,10 @@ export interface MagicTokenRecord {
   createdAt: number;
   expiresAt: number;
   isUsed: boolean;
+  adminId: string;
+  adminName: string;
   phone: string;
+  displayPhone: string;
   usedAt?: number;
 }
 
@@ -23,7 +50,19 @@ export interface AdminSessionRecord {
   token: string;
   verifiedAt: number;
   expiresAt: number;
+  adminId: string;
+  adminName: string;
   phone: string;
+  displayPhone: string;
+}
+
+export function getAdminById(id: string): AdminProfile | undefined {
+  return AUTHORIZED_ADMINS.find((a) => a.id === id);
+}
+
+export function getAdminByPhone(phone: string): AdminProfile | undefined {
+  const digits = phone.replace(/\D/g, "");
+  return AUTHORIZED_ADMINS.find((a) => a.phone === digits || a.phone.endsWith(digits.slice(-10)));
 }
 
 /**
@@ -44,25 +83,32 @@ export function generateSecureToken(): string {
 }
 
 /**
- * Construct the WhatsApp direct dispatch URL
+ * Construct the WhatsApp direct dispatch URL for a target admin
  */
-export function buildWhatsAppMagicLink(token: string): string {
+export function buildWhatsAppMagicLink(token: string, targetPhone: string = DEFAULT_ADMIN.phone): string {
+  const cleanPhone = targetPhone.replace(/\D/g, "");
   const magicUrl = `${MAGIC_LINK_BASE_URL}/admin/verify?token=${token}`;
   const text = `Jay Vachhraj Store Admin Login: ${magicUrl}`;
-  return `https://wa.me/${ADMIN_PHONE_DIGITS}?text=${encodeURIComponent(text)}`;
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
 }
 
 /**
- * Save magic link token to Firestore & localStorage
+ * Save magic link token to Firestore & localStorage targeting an admin profile
  */
-export async function saveMagicToken(token: string): Promise<MagicTokenRecord> {
+export async function saveMagicToken(
+  token: string,
+  admin: AdminProfile = DEFAULT_ADMIN
+): Promise<MagicTokenRecord> {
   const now = Date.now();
   const record: MagicTokenRecord = {
     token,
     createdAt: now,
     expiresAt: now + TOKEN_EXPIRY_MS,
     isUsed: false,
-    phone: ADMIN_PHONE,
+    adminId: admin.id,
+    adminName: admin.name,
+    phone: admin.phone,
+    displayPhone: admin.displayPhone,
   };
 
   // 1. LocalStorage backup for instant local verification
@@ -88,19 +134,24 @@ export async function saveMagicToken(token: string): Promise<MagicTokenRecord> {
 /**
  * Set verified admin session in localStorage & cookie
  */
-export function setAdminSession(token: string): AdminSessionRecord {
+export function setAdminSession(token: string, admin?: AdminProfile): AdminSessionRecord {
   const now = Date.now();
+  const chosenAdmin = admin || DEFAULT_ADMIN;
   const session: AdminSessionRecord = {
     token,
     verifiedAt: now,
     expiresAt: now + SESSION_EXPIRY_MS,
-    phone: ADMIN_PHONE,
+    adminId: chosenAdmin.id,
+    adminName: chosenAdmin.name,
+    phone: chosenAdmin.phone,
+    displayPhone: chosenAdmin.displayPhone,
   };
 
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(session));
       sessionStorage.setItem("admin_session_active", "true");
+      sessionStorage.setItem("admin_session_identity", JSON.stringify(chosenAdmin));
       document.cookie = `${STORAGE_KEY_SESSION}=${token}; path=/; max-age=86400; SameSite=Strict`;
     } catch (e) {
       console.warn("Failed saving admin session to storage:", e);
@@ -153,6 +204,7 @@ export function clearAdminSession(): void {
   try {
     localStorage.removeItem(STORAGE_KEY_SESSION);
     sessionStorage.removeItem("admin_session_active");
+    sessionStorage.removeItem("admin_session_identity");
     document.cookie = `${STORAGE_KEY_SESSION}=; path=/; max-age=0; SameSite=Strict`;
   } catch (e) {
     console.warn("Failed clearing admin session:", e);
@@ -160,16 +212,17 @@ export function clearAdminSession(): void {
 }
 
 /**
- * Validate and consume magic link token
+ * Validate and consume magic link token against authorized admin profiles
  */
-export async function verifyAndConsumeToken(token: string): Promise<{ success: boolean; error?: string }> {
+export async function verifyAndConsumeToken(
+  token: string
+): Promise<{ success: boolean; error?: string; admin?: AdminProfile }> {
   if (!token || typeof token !== "string" || token.trim().length === 0) {
     return { success: false, error: "Missing or invalid token format." };
   }
 
   const cleanToken = token.trim();
   let record: MagicTokenRecord | null = null;
-  let source: "firestore" | "local" = "firestore";
 
   // Check Firestore first
   try {
@@ -177,7 +230,6 @@ export async function verifyAndConsumeToken(token: string): Promise<{ success: b
     const snap = await getDoc(tokenRef);
     if (snap.exists()) {
       record = snap.data() as MagicTokenRecord;
-      source = "firestore";
     }
   } catch (err) {
     console.warn("Firestore token fetch failed, attempting local fallback:", err);
@@ -189,7 +241,6 @@ export async function verifyAndConsumeToken(token: string): Promise<{ success: b
       const localRaw = localStorage.getItem(`${STORAGE_KEY_TOKEN_PREFIX}${cleanToken}`);
       if (localRaw) {
         record = JSON.parse(localRaw) as MagicTokenRecord;
-        source = "local";
       }
     } catch {
       // ignore
@@ -210,6 +261,13 @@ export async function verifyAndConsumeToken(token: string): Promise<{ success: b
   if (record.isUsed) {
     return { success: false, error: "Link Expired" };
   }
+
+  // Verify against authorized admins list
+  const matchedAdmin =
+    (record.adminId ? getAdminById(record.adminId) : undefined) ||
+    (record.phone ? getAdminByPhone(record.phone) : undefined) ||
+    AUTHORIZED_ADMINS.find((a) => a.phone === record?.phone) ||
+    DEFAULT_ADMIN;
 
   // Mark token as used
   const usedAt = Date.now();
@@ -236,8 +294,8 @@ export async function verifyAndConsumeToken(token: string): Promise<{ success: b
     }
   }
 
-  // Set secure admin session token in storage
-  setAdminSession(cleanToken);
+  // Set secure admin session token in storage with verified admin profile
+  setAdminSession(cleanToken, matchedAdmin);
 
-  return { success: true };
+  return { success: true, admin: matchedAdmin };
 }

@@ -89,8 +89,8 @@ export default function VisualAdminProtectedPage() {
       const session = getAdminSession();
       if (session) {
         return {
-          email: `${ADMIN_PHONE} (WhatsApp Verified)`,
-          displayName: "Store Admin",
+          email: `${session.adminName || "Admin"} (${session.displayPhone || session.phone})`,
+          displayName: session.adminName || "Store Admin",
           uid: "whatsapp-admin-" + session.token.slice(0, 8),
         } as unknown as User;
       }
@@ -234,8 +234,8 @@ export default function VisualAdminProtectedPage() {
       setCurrentUser((prev) => {
         if (prev && isAdminEmail(prev.email)) return prev;
         return {
-          email: `${ADMIN_PHONE} (WhatsApp Verified)`,
-          displayName: "Store Admin",
+          email: `${session.adminName || "Admin"} (${session.displayPhone || session.phone})`,
+          displayName: session.adminName || "Store Admin",
           uid: "whatsapp-admin-" + session.token.slice(0, 8),
         } as unknown as User;
       });

@@ -7,7 +7,7 @@ import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTim
 import html2canvas from "html2canvas";
 import { Camera, Check, CheckCircle2, Clock, Copy, ExternalLink, FileDown, FolderOpen, Heart, Home, Loader2, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, format12Hour, parseTimeToMinutes, StoreCategory, StoreSettings } from "./store-config";
-import { generateSecureToken, saveMagicToken, ADMIN_PHONE } from "./admin-session";
+import { generateSecureToken, saveMagicToken, AUTHORIZED_ADMINS, AdminProfile, ADMIN_PHONE } from "./admin-session";
 
 interface Product {
   id: string;
@@ -77,6 +77,9 @@ export default function CustomerStorePage() {
   const holdStartTimeRef = useRef(0);
 
   // Magic link generator states
+  const [selectedAdminId, setSelectedAdminId] = useState<string>(AUTHORIZED_ADMINS[0].id);
+  const selectedAdmin = AUTHORIZED_ADMINS.find((a) => a.id === selectedAdminId) || AUTHORIZED_ADMINS[0];
+  const [targetAdminProfile, setTargetAdminProfile] = useState<AdminProfile>(AUTHORIZED_ADMINS[0]);
   const [isGeneratingToken, setIsGeneratingToken] = useState(false);
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
   const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
@@ -238,23 +241,26 @@ export default function CustomerStorePage() {
     setGeneratedToken(null);
     setTokenExpiresAt(null);
     setLinkCopied(false);
+    setSelectedAdminId(AUTHORIZED_ADMINS[0].id);
+    setTargetAdminProfile(AUTHORIZED_ADMINS[0]);
     clearHoldTimer();
     clearInactivityTimer();
   };
 
-  // WhatsApp Magic Link generation
+  // WhatsApp Magic Link generation targeting selected admin
   const handleGenerateAdminMagicLink = async () => {
     try {
       setIsGeneratingToken(true);
       const token = generateSecureToken();
-      const record = await saveMagicToken(token);
+      const record = await saveMagicToken(token, selectedAdmin);
       
       setGeneratedToken(token);
       setTokenExpiresAt(record.expiresAt);
+      setTargetAdminProfile(selectedAdmin);
       setLinkCopied(false);
 
       const magicUrl = `https://vachhraj-store.web.app/admin/verify?token=${token}`;
-      const whatsappUrl = `https://wa.me/919638009880?text=${encodeURIComponent(
+      const whatsappUrl = `https://wa.me/${selectedAdmin.phone}?text=${encodeURIComponent(
         `Jay Vachhraj Store Admin Login: ${magicUrl}`
       )}`;
 
@@ -1641,53 +1647,113 @@ export default function CustomerStorePage() {
               Dual-stage timed hold verified. Generate a one-click WhatsApp magic link to authenticate the admin session.
             </p>
 
-            {/* Target Admin Mobile Card */}
-            <div className="mt-5 rounded-2xl border border-slate-700/80 bg-slate-900/80 p-3.5 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                  <MessageCircle size={18} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                    Target Admin Mobile
-                  </div>
-                  <div className="text-xs sm:text-sm font-black text-emerald-300 truncate">
-                    +91 96380 09880
-                  </div>
-                </div>
-              </div>
-              <span className="shrink-0 rounded-lg bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                Authorized
-              </span>
-            </div>
-
-            {/* Action or Active Link State */}
+            {/* Admin Profile Selector Chips */}
             {!generatedToken ? (
-              <div className="mt-6 space-y-3">
-                <button
-                  type="button"
-                  onClick={handleGenerateAdminMagicLink}
-                  disabled={isGeneratingToken}
-                  className="flex min-h-12 w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:opacity-75 disabled:cursor-wait"
-                >
-                  {isGeneratingToken ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" />
-                      <span>Generating Secure Token...</span>
-                    </>
-                  ) : (
-                    <>
-                      <MessageCircle size={18} />
-                      <span>Generate Secure Admin Link</span>
-                    </>
-                  )}
-                </button>
-                <p className="text-center text-[11px] text-slate-500">
-                  Generates a single-use 32-hex token expiring in 5 minutes.
-                </p>
+              <div className="mt-5 space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                      Select Authorizing Admin
+                    </span>
+                    <span className="text-[10px] text-orange-400 font-bold">
+                      WhatsApp 1-Click
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {AUTHORIZED_ADMINS.map((admin) => {
+                      const isSelected = admin.id === selectedAdminId;
+                      return (
+                        <button
+                          key={admin.id}
+                          type="button"
+                          onClick={() => setSelectedAdminId(admin.id)}
+                          className={`relative flex flex-col p-3 rounded-2xl border text-left transition-all duration-200 active:scale-[0.98] ${
+                            isSelected
+                              ? "border-emerald-500 bg-emerald-950/40 ring-2 ring-emerald-500/80 shadow-lg shadow-emerald-950/40"
+                              : "border-slate-700/80 bg-slate-900/60 hover:bg-slate-800/80 hover:border-slate-600"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1 w-full">
+                            <span className={`text-xs font-black truncate ${isSelected ? "text-white" : "text-slate-300"}`}>
+                              {admin.name}
+                            </span>
+                            <span
+                              className={`shrink-0 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md border ${
+                                admin.id === "primary"
+                                  ? isSelected
+                                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                    : "bg-slate-800 text-slate-400 border-slate-700"
+                                  : isSelected
+                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                  : "bg-slate-800 text-slate-400 border-slate-700"
+                              }`}
+                            >
+                              {admin.id === "primary" ? "Primary" : "Co-Admin"}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-1.5 text-xs">
+                            <MessageCircle size={13} className={isSelected ? "text-emerald-400" : "text-slate-500"} />
+                            <span className={`font-mono text-[11px] font-semibold ${isSelected ? "text-emerald-300" : "text-slate-400"}`}>
+                              {admin.displayPhone}
+                            </span>
+                          </div>
+                          {isSelected && (
+                            <div className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xs">
+                              <Check size={10} strokeWidth={3} />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleGenerateAdminMagicLink}
+                    disabled={isGeneratingToken}
+                    className="flex min-h-12 w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:opacity-75 disabled:cursor-wait"
+                  >
+                    {isGeneratingToken ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        <span>Generating Secure Token...</span>
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle size={18} />
+                        <span>Generate Secure Admin Link ({selectedAdmin.name})</span>
+                      </>
+                    )}
+                  </button>
+                  <p className="text-center text-[11px] text-slate-500">
+                    Dispatches a 5-minute single-use link directly to {selectedAdmin.displayPhone}
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="mt-5 space-y-3 animate-in fade-in">
+                {/* Dispatched Admin Details */}
+                <div className="rounded-2xl border border-slate-700/80 bg-slate-900/80 p-3.5 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      <MessageCircle size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        Dispatched to {targetAdminProfile.name}
+                      </div>
+                      <div className="text-xs sm:text-sm font-black text-emerald-300 truncate">
+                        {targetAdminProfile.displayPhone}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded-lg bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                    Authorized
+                  </span>
+                </div>
+
                 <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-3.5 text-center">
                   <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-300">
                     <CheckCircle2 size={15} />
@@ -1705,7 +1771,7 @@ export default function CustomerStorePage() {
 
                 <div className="grid grid-cols-2 gap-2">
                   <a
-                    href={`https://wa.me/919638009880?text=${encodeURIComponent(
+                    href={`https://wa.me/${targetAdminProfile.phone}?text=${encodeURIComponent(
                       `Jay Vachhraj Store Admin Login: https://vachhraj-store.web.app/admin/verify?token=${generatedToken}`
                     )}`}
                     target="_blank"
