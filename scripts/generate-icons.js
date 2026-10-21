@@ -1,6 +1,6 @@
-const fs = require('fs');
-const zlib = require('zlib');
-const path = require('path');
+import fs from 'fs';
+import zlib from 'zlib';
+import path from 'path';
 
 function createPng(width, height, r, g, b) {
   // PNG signature
@@ -22,7 +22,7 @@ function createPng(width, height, r, g, b) {
     const typeBuf = Buffer.from(type);
     const crc = Buffer.alloc(4);
     const full = Buffer.concat([typeBuf, data]);
-    const crcVal = require('zlib').crc32(full);
+    const crcVal = zlib.crc32(full);
     crc.writeUInt32BE(crcVal >>> 0, 0);
     return Buffer.concat([len, full, crc]);
   }

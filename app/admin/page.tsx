@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { db, auth, googleProvider } from "../firebase";
 import { isAdminEmail } from "../admin-config";
-import { ArrowDown, ArrowUp, Check, CircleCheck, CircleX, ClipboardList, Clock, Copy, CreditCard, Database, ExternalLink, FileDown, FileUp, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, LockKeyhole, MapPin, Megaphone, MessageCircle, Pencil, Plus, Printer, Save, Search, Settings, ShieldAlert, ShieldCheck, ShoppingBasket, Store, Tag, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, CircleCheck, CircleX, ClipboardList, Clock, Copy, CreditCard, Database, ExternalLink, FileDown, FileUp, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, LockKeyhole, MapPin, Megaphone, MessageCircle, Pencil, Plus, Printer, Save, Search, Settings, ShieldAlert, ShieldCheck, ShoppingBasket, Store, Tag, Trash2, X } from "lucide-react";
 import { ImageCropModal } from "./image-crop-modal";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, format12Hour, normalizeStoreSettings, sanitizeWhatsAppNumber, StoreCategory, StoreSettings } from "../store-config";
 import {
@@ -59,6 +59,8 @@ interface StoreOrder {
   createdAt?: { toDate?: () => Date };
 }
 
+type SettingsView = 'menu' | 'profile' | 'hours' | 'categories' | 'payments' | 'offers' | 'backup';
+
 export default function VisualAdminProtectedPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
@@ -78,11 +80,16 @@ export default function VisualAdminProtectedPage() {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBannerModalOpen, setBannerModalOpen] = useState(false);
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settingsView, setSettingsView] = useState<SettingsView>('menu');
+  const [stockFilterOnly, setStockFilterOnly] = useState(false);
+  const [quickEditing, setQuickEditing] = useState<{ productId: string; price: string; units: string } | null>(null);
+  const [isSavingQuickEdit, setIsSavingQuickEdit] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Product Form
-  const [formNameGu, setFormNameGu] = useState("");
-  const [formNameEn, setFormNameEn] = useState("");
+  // Product Form (Unified Single Name)
+  const [formItemName, setFormItemName] = useState("");
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [isDeletingOrders, setIsDeletingOrders] = useState(false);
   const [formCategory, setFormCategory] = useState("કઠોળ-અનાજ");
   const [formUnits, setFormUnits] = useState("500g, 1kg, 2kg, 5kg");
   const [formPrice, setFormPrice] = useState("0");
@@ -95,7 +102,7 @@ export default function VisualAdminProtectedPage() {
 
   // Banner Form
   const [newBanTitle, setNewBanTitle] = useState("");
-  const [newBanTag, setNewBanTag] = useState("ઓફર");
+  const [newBanTag, setNewBanTag] = useState("Special Offer");
   const [newBanDesc, setNewBanDesc] = useState("");
   const [newBanImg, setNewBanImg] = useState("");
   const [newBanActive, setNewBanActive] = useState(true);
@@ -129,7 +136,7 @@ export default function VisualAdminProtectedPage() {
 
   const openCropperForFile = (file: File, target: CropTarget) => {
     if (!file.type.startsWith("image/")) {
-      showToast("કૃપા કરીને ફોટો ફાઈલ (JPG, PNG, WebP) પસંદ કરો.");
+      showToast("Please choose an image file (JPG, PNG, WebP).");
       return;
     }
     const reader = new FileReader();
@@ -155,19 +162,19 @@ export default function VisualAdminProtectedPage() {
     if (!cropTarget) return;
     if (cropTarget.type === "product") {
       setFormPhotoUrl(croppedDataUrl);
-      showToast("પ્રોડક્ટ ફોટો ક્રોપ થઈ ગયો! સાચવવા માટે સેવ કરો.");
+      showToast("Product photo adjusted! Save to apply.");
     } else if (cropTarget.type === "banner") {
       setNewBanImg(croppedDataUrl);
-      showToast("બેનર ફોટો ક્રોપ થઈ ગયો! સેવ કરો.");
+      showToast("Banner photo adjusted! Save to apply.");
     } else if (cropTarget.type === "logo") {
       setSettingsForm((current) => ({ ...current, logoMode: "image", logoUrl: croppedDataUrl }));
-      showToast("સ્ટોર લોગો ક્રોપ થઈ ગયો! સેટિંગ્સ સેવ કરો.");
+      showToast("Store logo adjusted! Save settings to apply.");
     } else if (cropTarget.type === "promo") {
       setSettingsForm((current) => ({ ...current, promoImageUrl: croppedDataUrl }));
-      showToast("ઓફર બેનર ક્રોપ થઈ ગયો! સેટિંગ્સ સેવ કરો.");
+      showToast("Offer banner adjusted! Save settings to apply.");
     } else if (cropTarget.type === "upiQr") {
       setSettingsForm((current) => ({ ...current, upiQrUrl: croppedDataUrl }));
-      showToast("UPI QR કોડ ક્રોપ થઈ ગયો! સેટિંગ્સ સેવ કરો.");
+      showToast("UPI QR adjusted! Save settings to apply.");
     }
     setCropModalOpen(false);
   };
@@ -228,13 +235,13 @@ export default function VisualAdminProtectedPage() {
       if (!prodSnap.empty) {
         const list = prodSnap.docs.map((d) => {
           const raw = d.data();
-          let parsedUnits: string[] = ["1 નંગ"];
+          let parsedUnits: string[] = ["1 pc"];
           if (Array.isArray(raw.units)) parsedUnits = raw.units;
           else if (typeof raw.unit === "string") parsedUnits = [raw.unit];
 
           return {
             id: d.id,
-            nameGu: raw.nameGu || raw.name_gu || "કરિયાણું આઇટમ",
+            nameGu: raw.nameGu || raw.name_gu || "Grocery Item",
             nameEn: raw.nameEn || raw.name_en || "",
             category: raw.category || "કઠોળ-અનાજ",
             units: parsedUnits,
@@ -279,7 +286,7 @@ export default function VisualAdminProtectedPage() {
       },
       (error) => {
         console.error("Failed to listen for slider updates:", error);
-        showToast("સ્લાઇડર લોડ કરવામાં ભૂલ આવી!");
+        showToast("Failed to load slider banners.");
       },
     );
   }, [currentUser]);
@@ -346,8 +353,7 @@ export default function VisualAdminProtectedPage() {
   const openModal = (product?: Product) => {
     if (product) {
       setEditingProduct(product);
-      setFormNameGu(product.nameGu);
-      setFormNameEn(product.nameEn || "");
+      setFormItemName(product.nameGu || product.nameEn || "");
       setFormCategory(product.category);
       setFormUnits(product.units.join(", "));
       setFormPrice(product.price.toString());
@@ -359,8 +365,7 @@ export default function VisualAdminProtectedPage() {
       setFormOffer(product.offer);
     } else {
       setEditingProduct(null);
-      setFormNameGu("");
-      setFormNameEn("");
+      setFormItemName("");
       setFormCategory(settingsForm.categories[0]?.id ?? DEFAULT_CATEGORIES[0].id);
       setFormUnits("500g, 1kg, 2kg, 5kg");
       setFormPrice("0");
@@ -377,8 +382,9 @@ export default function VisualAdminProtectedPage() {
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSavingProduct) return;
-    if (!formNameGu.trim()) {
-      showToast("નામ લખવું જરૂરી છે!");
+    const nameVal = formItemName.trim();
+    if (!nameVal) {
+      showToast("Item name is required!");
       return;
     }
     setIsSavingProduct(true);
@@ -389,12 +395,12 @@ export default function VisualAdminProtectedPage() {
 
     const payload = {
       id: targetId,
-      nameGu: formNameGu,
-      name_gu: formNameGu,
-      nameEn: formNameEn,
-      name_en: formNameEn,
+      nameGu: nameVal,
+      name_gu: nameVal,
+      nameEn: nameVal,
+      name_en: nameVal,
       category: formCategory,
-      units: unitsArr.length > 0 ? unitsArr : ["1 નંગ"],
+      units: unitsArr.length > 0 ? unitsArr : ["1 pc"],
       price: priceNum,
       inStock: formInStock,
       in_stock: formInStock,
@@ -408,26 +414,26 @@ export default function VisualAdminProtectedPage() {
 
     try {
       await setDoc(doc(db, "products", targetId), payload, { merge: true });
-      showToast(`'${formNameGu}' સેવ થઈ ગયું!`);
+      showToast(`'${nameVal}' saved successfully!`);
       setProductModalOpen(false);
       loadData();
     } catch (err) {
       console.error(err);
-      showToast("સેવ કરવામાં ભૂલ આવી!");
+      showToast("Failed to save item!");
     } finally {
       setIsSavingProduct(false);
     }
   };
 
   const handleDeleteProduct = async (id: string, name: string) => {
-    if (!confirm(`શું '${name}' કાઢી નાખવું છે?`)) return;
+    if (!confirm(`Are you sure you want to delete '${name}'?`)) return;
     try {
       await deleteDoc(doc(db, "products", id));
       setProducts((prev) => prev.filter((p) => p.id !== id));
-      showToast("કાઢી નાખ્યું!");
+      showToast("Item deleted!");
     } catch (err) {
       console.error(err);
-      showToast("ભૂલ આવી!");
+      showToast("Failed to delete item!");
     }
   };
 
@@ -440,12 +446,127 @@ export default function VisualAdminProtectedPage() {
         { merge: true }
       );
       setProducts((prev) =>
-          prev.map((item) => (item.id === p.id ? { ...item, inStock: newStatus, stockCount: newStatus ? Math.max(1, p.stockCount) : 0 } : item))
+        prev.map((item) => (item.id === p.id ? { ...item, inStock: newStatus, stockCount: newStatus ? Math.max(1, p.stockCount) : 0 } : item))
       );
-      showToast(newStatus ? "સ્ટોક હાજર કર્યો!" : "સ્ટોક પૂર્ણ કર્યો!");
+      showToast(newStatus ? "Marked as In Stock!" : "Marked as Out of Stock!");
     } catch (err) {
       console.error(err);
+      showToast("Error updating stock status!");
     }
+  };
+
+  const startQuickEdit = (p: Product) => {
+    setQuickEditing({
+      productId: p.id,
+      price: String(p.price),
+      units: p.units?.join(", ") || "",
+    });
+  };
+
+  const handleSaveQuickEdit = async (p: Product) => {
+    if (!quickEditing || quickEditing.productId !== p.id) return;
+    const newPrice = parseFloat(quickEditing.price);
+    if (isNaN(newPrice) || newPrice < 0) {
+      showToast("Please enter a valid price!");
+      return;
+    }
+    const unitsArr = quickEditing.units
+      .split(",")
+      .map((u) => u.trim())
+      .filter(Boolean);
+    const finalUnits = unitsArr.length > 0 ? unitsArr : p.units?.length ? p.units : ["1 pc"];
+
+    setIsSavingQuickEdit(true);
+    try {
+      await setDoc(
+        doc(db, "products", p.id),
+        {
+          price: newPrice,
+          units: finalUnits,
+        },
+        { merge: true }
+      );
+      setProducts((prev) =>
+        prev.map((item) =>
+          item.id === p.id
+            ? { ...item, price: newPrice, units: finalUnits }
+            : item
+        )
+      );
+      setQuickEditing(null);
+      showToast("Price and packing updated!");
+    } catch (err) {
+      console.error(err);
+      showToast("Error updating price!");
+    } finally {
+      setIsSavingQuickEdit(false);
+    }
+  };
+
+  // Order Archive Multi-select & Bulk Deletion
+  const handleToggleSelectOrder = (id: string) => {
+    setSelectedOrderIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllOrders = () => {
+    if (selectedOrderIds.length === orders.length) {
+      setSelectedOrderIds([]);
+    } else {
+      setSelectedOrderIds(orders.map((o) => o.id));
+    }
+  };
+
+  const handleDeleteSelectedOrders = async () => {
+    if (selectedOrderIds.length === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedOrderIds.length} selected orders?`)) return;
+
+    setIsDeletingOrders(true);
+    try {
+      const toDelete = [...selectedOrderIds];
+      await Promise.all(toDelete.map((id) => deleteDoc(doc(db, "orders", id))));
+      setOrders((prev) => prev.filter((o) => !toDelete.includes(o.id)));
+      setSelectedOrderIds([]);
+      showToast(`${toDelete.length} orders deleted successfully.`);
+    } catch (error) {
+      console.error("Error deleting selected orders:", error);
+      showToast("Failed to delete selected orders.");
+    } finally {
+      setIsDeletingOrders(false);
+    }
+  };
+
+  const handleClearAllOrders = async () => {
+    if (orders.length === 0) return;
+    if (!confirm(`Are you sure you want to CLEAR ALL ${orders.length} archived orders? This cannot be undone.`)) return;
+
+    setIsDeletingOrders(true);
+    try {
+      const allIds = orders.map((o) => o.id);
+      await Promise.all(allIds.map((id) => deleteDoc(doc(db, "orders", id))));
+      setOrders([]);
+      setSelectedOrderIds([]);
+      showToast("All archived orders cleared.");
+    } catch (error) {
+      console.error("Error clearing all orders:", error);
+      showToast("Failed to clear orders.");
+    } finally {
+      setIsDeletingOrders(false);
+    }
+  };
+
+  const handleShareProductWhatsApp = (p: Product) => {
+    const storeUrl = typeof window !== "undefined" ? window.location.origin : "https://vachhraj-store.web.app";
+    const packingText = p.units && p.units.length > 0 ? ` (${p.units.join(", ")})` : "";
+    const text = `🛒 *${p.nameGu}*${p.nameEn ? ` (${p.nameEn})` : ""}\n` +
+      `💰 Price: ₹${p.price}${packingText}\n` +
+      `📦 Stock: ${p.inStock ? "In Stock ✅" : "Out of Stock ❌"}\n\n` +
+      `🏪 *${storeSettings.storeName}*\n` +
+      `Click here to order:\n${storeUrl}`;
+    
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, "_blank");
   };
 
   const handleProductImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -483,7 +604,7 @@ export default function VisualAdminProtectedPage() {
   const resetBannerForm = () => {
     setEditingBannerId(null);
     setNewBanTitle("");
-    setNewBanTag("ઓફર");
+    setNewBanTag("Special Offer");
     setNewBanDesc("");
     setNewBanImg("");
     setNewBanActive(true);
@@ -493,7 +614,7 @@ export default function VisualAdminProtectedPage() {
     event.preventDefault();
     if (isSavingBanner) return;
     if (!newBanTitle.trim()) {
-      showToast("બેનરનું શીર્ષક લખવું જરૂરી છે!");
+      showToast("Banner title is required!");
       return;
     }
 
@@ -502,7 +623,7 @@ export default function VisualAdminProtectedPage() {
     const banner: Banner = {
       id: bannerId,
       title: newBanTitle.trim(),
-      tag: newBanTag.trim() || "ઓફર",
+      tag: newBanTag.trim() || "Offer",
       desc: newBanDesc.trim(),
       imgUrl: newBanImg.trim() || "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=1000&auto=format&fit=crop&q=80",
       active: newBanActive,
@@ -513,10 +634,10 @@ export default function VisualAdminProtectedPage() {
       await setDoc(doc(db, "banners", bannerId), banner);
       setBanners((current) => [banner, ...current.filter((item) => item.id !== bannerId)]);
       resetBannerForm();
-      showToast(wasEditing ? "બેનરમાં ફેરફાર સેવ થયો!" : "નવું બેનર ઉમેરાયું!");
+      showToast(wasEditing ? "Banner updated!" : "New banner added!");
     } catch (err) {
       console.error(err);
-      showToast("બેનર સેવ કરવામાં ભૂલ આવી!");
+      showToast("Failed to save banner!");
     } finally {
       setIsSavingBanner(false);
     }
@@ -534,22 +655,22 @@ export default function VisualAdminProtectedPage() {
   const handleToggleBanner = async (banner: Banner) => {
     try {
       await setDoc(doc(db, "banners", banner.id), { active: !banner.active }, { merge: true });
-      showToast(!banner.active ? "બેનર સક્રિય કર્યું!" : "બેનર છુપાવ્યું!");
+      showToast(!banner.active ? "Banner activated!" : "Banner hidden!");
     } catch (err) {
       console.error(err);
-      showToast("બેનરની સ્થિતિ અપડેટ કરવામાં ભૂલ આવી!");
+      showToast("Failed to update banner status!");
     }
   };
 
   const handleDeleteBanner = async (banner: Banner) => {
-    if (!confirm(`શું '${banner.title}' બેનર કાઢી નાખવું છે?`)) return;
+    if (!confirm(`Are you sure you want to delete banner '${banner.title}'?`)) return;
     try {
       await deleteDoc(doc(db, "banners", banner.id));
       if (editingBannerId === banner.id) resetBannerForm();
-      showToast("બેનર કાઢી નાખ્યું!");
+      showToast("Banner deleted!");
     } catch (err) {
       console.error(err);
-      showToast("બેનર કાઢવામાં ભૂલ આવી!");
+      showToast("Failed to delete banner!");
     }
   };
 
@@ -784,7 +905,7 @@ export default function VisualAdminProtectedPage() {
         const price = Number(record.price);
         if (!nameGu || !Number.isFinite(price) || price < 0) throw new Error(`Invalid product data on row ${rowIndex + 2}.`);
         const id = record.id.trim() || `csv_${Date.now()}_${rowIndex}`;
-        return { id, nameGu, name_gu: nameGu, nameEn: record.nameEn ?? "", name_en: record.nameEn ?? "", category: record.category, price, brand: record.brand || "Other", stockCount: Math.max(0, Number(record.stockCount || 1)), originalPrice: Number(record.originalPrice || price), offer: record.offer === "true", units: ["1 નંગ"], inStock: Number(record.stockCount || 1) > 0, in_stock: Number(record.stockCount || 1) > 0, photoUrl: record.photoUrl || "" };
+        return { id, nameGu, name_gu: nameGu, nameEn: record.nameEn ?? "", name_en: record.nameEn ?? "", category: record.category, price, brand: record.brand || "Other", stockCount: Math.max(0, Number(record.stockCount || 1)), originalPrice: Number(record.originalPrice || price), offer: record.offer === "true", units: ["1 pc"], inStock: Number(record.stockCount || 1) > 0, in_stock: Number(record.stockCount || 1) > 0, photoUrl: record.photoUrl || "" };
       });
       for (let start = 0; start < imported.length; start += 450) {
         const batch = writeBatch(db);
@@ -817,7 +938,7 @@ export default function VisualAdminProtectedPage() {
   };
 
   const copyOrderTemplate = async (order: StoreOrder, template: "packed" | "ready") => {
-    const message = template === "packed" ? `તમારો ઓર્ડર પેક થઈ ગયો છે, ૧૫ મિનિટમાં પહોંચશે. ઓર્ડર: ${order.id.slice(-8)}` : `તમારો ઓર્ડર તૈયાર છે. કૃપા કરીને સ્ટોર પરથી લઈ જશો. ઓર્ડર: ${order.id.slice(-8)}`;
+    const message = template === "packed" ? `Your order is packed and will be delivered in 15 mins. Order: ${order.id.slice(-8)}` : `Your order is ready. Please pick it up from the store. Order: ${order.id.slice(-8)}`;
     try {
       await navigator.clipboard.writeText(message);
       showToast("WhatsApp status message copied.");
@@ -833,7 +954,7 @@ export default function VisualAdminProtectedPage() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(249,115,22,0.12),_transparent_55%)]" />
         <div className="relative flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-[#263653] bg-[#0f172a]/90 p-8 text-center shadow-2xl shadow-black/30">
           <span className="h-10 w-10 animate-spin rounded-full border-2 border-orange-400/30 border-t-orange-400" />
-          <p className="text-sm font-semibold">સુરક્ષા ચકાસણી થઈ રહી છે...</p>
+          <p className="text-sm font-semibold">Verifying security...</p>
         </div>
       </div>
     );
@@ -875,16 +996,21 @@ export default function VisualAdminProtectedPage() {
     );
   }
 
-  // Filter
+  // Filter & Low Stock Counter
+  const lowStockProducts = products.filter((p) => !p.inStock || p.stockCount <= 0);
+  const lowStockCount = lowStockProducts.length;
+
   const q = searchQuery.toLowerCase().trim();
   const filteredProducts = products.filter((p) => {
+    const matchesStock = !stockFilterOnly || !p.inStock || p.stockCount <= 0;
     const matchesCat = activeCategory === "all" || p.category === activeCategory;
     const matchesSearch =
       !q ||
       p.nameGu.toLowerCase().includes(q) ||
       (p.nameEn && p.nameEn.toLowerCase().includes(q)) ||
-      p.category.toLowerCase().includes(q) || (settingsForm.categories.find((category) => category.id === p.category)?.name.toLowerCase().includes(q) ?? false);
-    return matchesCat && matchesSearch;
+      p.category.toLowerCase().includes(q) ||
+      (settingsForm.categories.find((category) => category.id === p.category)?.name.toLowerCase().includes(q) ?? false);
+    return matchesStock && matchesCat && matchesSearch;
   });
 
   const activeBanners = banners.filter((b) => b.active);
@@ -915,7 +1041,7 @@ export default function VisualAdminProtectedPage() {
                   {storeSettings.storeName}
                 </h1>
                 <p className="text-xs text-amber-400 font-bold">
-                  ઝાંઝમેર • શુદ્ધ અને તાજું કરિયાણું
+                  Zanzmer • Pure & Fresh Groceries
                 </p>
               </div>
             </div>
@@ -927,7 +1053,7 @@ export default function VisualAdminProtectedPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="શોધો... તુવેર દાળ, સીંગતેલ, જીરું..."
+              placeholder="Search products..."
               className="w-full rounded-xl border border-[#263653] bg-[#0c1322] py-2.5 pl-9 pr-8 text-sm text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
             />
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} aria-hidden="true" />
@@ -936,28 +1062,48 @@ export default function VisualAdminProtectedPage() {
       </header>
 
       {/* Admin Visual Action Bar with Logged In User & Logout */}
-      <section aria-label="એડમિન નિયંત્રણો" className="border-b border-orange-300/20 bg-gradient-to-r from-amber-700 via-orange-700 to-orange-600 px-4 py-3 text-white shadow-lg sm:px-6">
+      <section aria-label="Admin Controls" className="border-b border-orange-300/20 bg-gradient-to-r from-amber-700 via-orange-700 to-orange-600 px-4 py-3 text-white shadow-lg sm:px-6">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-2 text-xs font-bold sm:text-sm">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-pulse" />
-            <span className="truncate inline-flex items-center gap-2"><ShieldCheck size={16} /> એડમિન સક્રિય: {currentUser.email}</span>
+            <span className="truncate inline-flex items-center gap-2"><ShieldCheck size={16} /> Active Admin: {currentUser.email}</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+            {/* 3. Low Stock Alert Counter Badge */}
+            <button
+              type="button"
+              onClick={() => setStockFilterOnly((prev) => !prev)}
+              className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-black shadow-sm transition active:scale-95 ${
+                stockFilterOnly
+                  ? "border-amber-300 bg-amber-400 text-slate-950 shadow-amber-400/20"
+                  : lowStockCount > 0
+                  ? "border-amber-400/50 bg-black/40 text-amber-200 hover:bg-black/60"
+                  : "border-white/20 bg-black/20 text-emerald-300"
+              }`}
+              title={stockFilterOnly ? "Click to show all products" : "Click to filter low/out of stock products"}
+            >
+              <span>⚠️</span>
+              <span>
+                {lowStockCount} {stockFilterOnly ? "items low/out (Active)" : "items low/out"}
+              </span>
+            </button>
+
             <button
               onClick={() => openModal()}
               className="min-h-10 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-900 shadow transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              + નવી આઇટમ
+              + New Item
             </button>
             <button
               onClick={() => setBannerModalOpen(true)}
               className="min-h-10 rounded-xl border border-white/15 bg-slate-950/40 px-3 py-2 text-xs font-bold text-amber-100 transition hover:bg-slate-950/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              <ImageIcon className="mr-1 inline" size={15} /> સ્લાઇડર મેનેજર
+              <ImageIcon className="mr-1 inline" size={15} /> Slider Manager
             </button>
             <button
               onClick={() => {
                 setSettingsForm(storeSettings);
+                setSettingsView('menu');
                 setSettingsModalOpen(true);
               }}
               className="min-h-10 rounded-xl border border-white/15 bg-slate-950/40 px-3 py-2 text-xs font-bold text-white transition hover:bg-slate-950/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
@@ -968,7 +1114,7 @@ export default function VisualAdminProtectedPage() {
               onClick={handleLogout}
               className="min-h-10 rounded-xl border border-rose-200/15 bg-rose-950/60 px-3 py-2 text-xs font-bold text-rose-100 transition hover:bg-rose-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              લૉગઆઉટ
+              Logout
             </button>
           </div>
         </div>
@@ -987,11 +1133,11 @@ export default function VisualAdminProtectedPage() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 sm:px-6 sm:py-7">
         <section className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-[#1f2e4d] pb-4">
           <div>
-            <p className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-orange-300">સ્ટોર મેનેજમેન્ટ</p>
-            <h2 className="text-xl font-black text-white sm:text-2xl">દુકાનના સામાનનું સંચાલન</h2>
+            <p className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-orange-300">Store Management</p>
+            <h2 className="text-xl font-black text-white sm:text-2xl">Store Inventory Management</h2>
           </div>
           <p className="rounded-full border border-[#263653] bg-[#111c32] px-3 py-1.5 text-xs font-semibold text-slate-300">
-            કુલ {products.length} વસ્તુઓ
+            Total {products.length} items
           </p>
         </section>
         {/* Carousel / Slider */}
@@ -1039,26 +1185,62 @@ export default function VisualAdminProtectedPage() {
           </div>
         )}
 
-        {/* Categories */}
-        <section aria-label="કેટેગરી ફિલ્ટર" className="mb-5 rounded-2xl border border-[#1f2e4d] bg-[#0c1322]/70 p-3 sm:p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
-              <FolderOpen size={14} /> કેટેગરી પસંદ કરો:
-            </span>
-            <span className="text-[11px] text-slate-400">
-              {filteredProducts.length} આઇટમ ઉપલબ્ધ
-            </span>
+        {/* 5. Sticky Search Bar alongside Category Filter */}
+        <section
+          aria-label="Search and category filter"
+          className="sticky top-[69px] z-20 mb-5 rounded-2xl border border-[#1f2e4d] bg-[#0c1322]/95 backdrop-blur-md p-3 sm:p-4 shadow-xl"
+        >
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between mb-3">
+            {/* Pinned Responsive Search Input */}
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-400" size={16} aria-hidden="true" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search products... (name, category)"
+                className="w-full rounded-xl border border-[#263653] bg-[#111c32] py-2.5 pl-10 pr-9 text-sm text-white placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/25"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:text-white"
+                  title="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Quick status count and active filter pill */}
+            <div className="flex items-center justify-between sm:justify-end gap-2 text-xs">
+              <span className="text-[11px] font-semibold text-slate-400">
+                {filteredProducts.length} items available
+              </span>
+              {stockFilterOnly && (
+                <button
+                  type="button"
+                  onClick={() => setStockFilterOnly(false)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-amber-400/40 bg-amber-500/20 px-2 py-1 text-[11px] font-bold text-amber-300 hover:bg-amber-500/30"
+                >
+                  ✕ Out of stock only
+                </button>
+              )}
+            </div>
           </div>
+
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {[{ id: "all", name: "All Items", icon: "All" }, ...adminCategories].map((cat) => {
               const isSel = activeCategory === cat.id;
               return (
                 <button
                   key={cat.id}
+                  type="button"
                   onClick={() => setActiveCategory(cat.id)}
                   className={`px-3 py-1.5 rounded-xl whitespace-nowrap font-bold transition-all flex items-center gap-1.5 ${
                     isSel
-                      ? "bg-gradient-to-r from-orange-600 to-amber-500 text-white shadow-lg"
+                      ? "bg-gradient-to-r from-orange-600 to-amber-500 text-white shadow-lg shadow-orange-950/30"
                       : "border border-[#263653] bg-[#152036] text-slate-300 hover:border-orange-400 hover:bg-[#1b2a44]"
                   }`}
                 >
@@ -1095,36 +1277,34 @@ export default function VisualAdminProtectedPage() {
                 <div className="relative w-full aspect-[4/3] bg-[#070b14] overflow-hidden">
                   <img
                     src={item.photoUrl}
-                    alt={item.nameGu}
+                    alt={item.nameGu || item.nameEn}
                     className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
                       !item.inStock ? "grayscale opacity-50" : ""
                     }`}
                   />
-                  <span className="absolute top-2 left-2 bg-black/75 backdrop-blur-md text-amber-300 border border-white/10 text-[9px] font-bold px-2 py-0.5 rounded-md">
+
+                  {/* Category Pill */}
+                  <span className="absolute bottom-2 left-2 bg-black/75 backdrop-blur-md text-amber-300 border border-white/10 text-[9px] font-bold px-2 py-0.5 rounded-md">
                     {item.category}
                   </span>
 
-                  {!item.inStock && (
-                    <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow">
-                      સ્ટોક પૂર્ણ
-                    </span>
-                  )}
-
-                  {/* Merchant Action Buttons */}
-                  <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+                  {/* Merchant Action Buttons (Edit & Delete only; WhatsApp removed) */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
                     <button
+                      type="button"
                       onClick={() => openModal(item)}
-                      aria-label={`${item.nameGu} સુધારો`}
+                      aria-label={`Edit ${item.nameGu || item.nameEn}`}
                       className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 bg-amber-400 text-sm font-bold text-slate-950 shadow-lg transition hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                      title="સુધારો"
+                      title="Edit"
                     >
                       <Pencil size={15} />
                     </button>
                     <button
-                      onClick={() => handleDeleteProduct(item.id, item.nameGu)}
-                      aria-label={`${item.nameGu} કાઢી નાખો`}
+                      type="button"
+                      onClick={() => handleDeleteProduct(item.id, item.nameGu || item.nameEn || "item")}
+                      aria-label={`Delete ${item.nameGu || item.nameEn}`}
                       className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-rose-600 text-sm font-bold text-white shadow-lg transition hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                      title="કાઢી નાખો"
+                      title="Delete"
                     >
                       <Trash2 size={15} />
                     </button>
@@ -1134,32 +1314,95 @@ export default function VisualAdminProtectedPage() {
                 <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
                   <div>
                     <h4 className="line-clamp-1 text-sm font-bold text-white sm:text-base">
-                      {item.nameGu}
+                      {item.nameGu || item.nameEn}
                     </h4>
-                    <p className="line-clamp-1 text-xs text-slate-400">
-                      {item.nameEn || ""}
-                    </p>
+                    {item.nameEn && item.nameEn !== item.nameGu && (
+                      <p className="line-clamp-1 text-xs text-slate-400">
+                        {item.nameEn}
+                      </p>
+                    )}
                   </div>
 
-                  <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
-                      <span>પેકિંગ:</span>
-                      <span className="text-amber-400 font-bold text-xs">₹{item.price}</span>
+                  {/* 2. Inline Quick Price & Weight Edit */}
+                  {quickEditing?.productId === item.id ? (
+                    <div className="rounded-xl border border-amber-400/40 bg-[#0c1322] p-2.5 space-y-2 shadow-inner">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-amber-400">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={quickEditing.price}
+                          onChange={(e) => setQuickEditing((prev) => prev ? { ...prev, price: e.target.value } : null)}
+                          placeholder="Price"
+                          className="w-20 rounded-lg border border-[#34445f] bg-[#152036] px-2 py-1 text-xs font-bold text-white focus:border-orange-400 focus:outline-none"
+                          autoFocus
+                        />
+                        <div className="ml-auto flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveQuickEdit(item)}
+                            disabled={isSavingQuickEdit}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600 text-white shadow transition hover:bg-emerald-500 disabled:opacity-50"
+                            title="Save"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQuickEditing(null)}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-700 text-slate-300 transition hover:bg-slate-600"
+                            title="Cancel"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          value={quickEditing.units}
+                          onChange={(e) => setQuickEditing((prev) => prev ? { ...prev, units: e.target.value } : null)}
+                          placeholder="Packing (e.g. 500g, 1kg)"
+                          className="w-full rounded-lg border border-[#34445f] bg-[#152036] px-2 py-1 text-[11px] text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
+                        />
+                      </div>
                     </div>
-
-                    <div className="flex flex-wrap gap-1">
-                      {item.units?.map((u, i) => (
-                        <span
-                          key={i}
-                          className="rounded-lg border border-[#263653] bg-[#0c1322] px-2 py-1 text-[11px] text-slate-300"
+                  ) : (
+                    <div>
+                      <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
+                        <span>Packing:</span>
+                        <button
+                          type="button"
+                          onClick={() => startQuickEdit(item)}
+                          className="group/price flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-bold text-amber-400 hover:bg-amber-400/10 transition"
+                          title="Click to quickly edit price & packing"
                         >
-                          {u}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                          <span>₹{item.price}</span>
+                          <Pencil size={11} className="text-slate-400 opacity-60 group-hover/price:text-amber-400 group-hover/price:opacity-100 transition" />
+                        </button>
+                      </div>
 
+                      <div
+                        onClick={() => startQuickEdit(item)}
+                        className="flex flex-wrap gap-1 cursor-pointer group/units"
+                        title="Click to quickly edit price & packing"
+                      >
+                        {item.units?.map((u, i) => (
+                          <span
+                            key={i}
+                            className="rounded-lg border border-[#263653] bg-[#0c1322] px-2 py-1 text-[11px] text-slate-300 group-hover/units:border-amber-400/40 transition"
+                          >
+                            {u}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 1. Single In Stock Button (Bottom Only, Strictly in English) */}
                   <button
+                    type="button"
                     onClick={() => handleToggleStock(item)}
                     className={`mt-1 min-h-10 w-full rounded-xl border px-3 py-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 ${
                       item.inStock
@@ -1167,17 +1410,26 @@ export default function VisualAdminProtectedPage() {
                         : "border-rose-500/40 bg-rose-600/15 text-rose-300 hover:bg-rose-600/25"
                     }`}
                   >
-                    {item.inStock ? <><CircleCheck className="mr-1 inline" size={15} />સ્ટોકમાં હાજર</> : <><CircleX className="mr-1 inline" size={15} />સ્ટોક ખલાસ</>}
+                    {item.inStock ? (
+                      <>
+                        <CircleCheck className="mr-1 inline" size={15} />
+                        In Stock
+                      </>
+                    ) : (
+                      <>
+                        <CircleX className="mr-1 inline" size={15} />
+                        Out of Stock
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
-            ))}
-          </div>
+            ))}          </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-[#34445f] bg-[#0c1322]/70 px-5 py-12 text-center">
               <ShoppingBasket className="mx-auto text-slate-500" size={32} aria-hidden="true" />
-              <h3 className="mt-3 text-base font-bold text-white">કોઈ વસ્તુ મળી નથી</h3>
-              <p className="mt-1 text-sm text-slate-400">શોધ અથવા કેટેગરી બદલીને ફરી પ્રયાસ કરો.</p>
+              <h3 className="mt-3 text-base font-bold text-white">No products found</h3>
+              <p className="mt-1 text-sm text-slate-400">Try adjusting your search or category filter.</p>
             </div>
           )
         )}
@@ -1189,14 +1441,14 @@ export default function VisualAdminProtectedPage() {
           <div role="dialog" aria-modal="true" aria-labelledby="product-modal-title" className="my-auto flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-[#34445f] bg-[#0f172a] shadow-2xl shadow-black/50">
             <div className="flex items-center justify-between border-b border-[#263653] bg-[#152036] px-4 py-4 sm:px-6">
               <div>
-                <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-orange-300">પ્રોડક્ટ વિગતો</p>
+                <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-orange-300">Product Details</p>
                 <h3 id="product-modal-title" className="text-base font-black text-white sm:text-lg">
-                {editingProduct ? "આઇટમમાં સુધારો કરો" : "નવી આઇટમ ઉમેરો"}
+                {editingProduct ? "Edit Item Details" : "Add New Item"}
                 </h3>
               </div>
               <button
                 onClick={() => setProductModalOpen(false)}
-                aria-label="વિન્ડો બંધ કરો"
+                aria-label="Close modal"
                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#34445f] bg-[#0c1322] text-slate-400 transition hover:border-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
               >
                 <X size={18} />
@@ -1206,30 +1458,19 @@ export default function VisualAdminProtectedPage() {
             <form onSubmit={handleSaveProduct} className="flex-1 space-y-4 overflow-y-auto p-4 text-sm sm:p-6">
               <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <label className="mb-1.5 block text-xs font-bold text-slate-300">ગુજરાતી નામ *</label>
+                <label className="mb-1.5 block text-xs font-bold text-slate-300">Item Name *</label>
                 <input
                   type="text"
                   required
-                  value={formNameGu}
-                  onChange={(e) => setFormNameGu(e.target.value)}
-                  placeholder="દા.ત. પ્રીમિયમ દેશી તુવેર દાળ"
+                  value={formItemName}
+                  onChange={(e) => setFormItemName(e.target.value)}
+                  placeholder="e.g., Moong Fada / Toor Dal"
                   className="w-full rounded-xl border border-[#34445f] bg-[#0a111f] px-3 py-3 text-sm text-white placeholder:text-slate-600 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                 />
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-300">અંગ્રેજી નામ</label>
-                <input
-                  type="text"
-                  value={formNameEn}
-                  onChange={(e) => setFormNameEn(e.target.value)}
-                  placeholder="દા.ત. Desi Toor Dal"
-                  className="w-full rounded-xl border border-[#34445f] bg-[#0a111f] px-3 py-3 text-sm text-white placeholder:text-slate-600 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-300">કેટેગરી *</label>
+                <label className="mb-1.5 block text-xs font-bold text-slate-300">Category *</label>
                 <select
                   value={formCategory}
                   onChange={(e) => setFormCategory(e.target.value)}
@@ -1241,7 +1482,7 @@ export default function VisualAdminProtectedPage() {
 
               <div>
                 <label className="mb-1.5 block text-xs font-bold text-slate-300">
-                  વજન / પેકિંગ (અલ્પવિરામ વડે અલગ કરો) *
+                  Weight / Packing (comma separated) *
                 </label>
                 <input
                   type="text"
@@ -1253,7 +1494,7 @@ export default function VisualAdminProtectedPage() {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-300">ભાવ / કિંમત (₹)</label>
+                <label className="mb-1.5 block text-xs font-bold text-slate-300">Price (₹)</label>
                 <input
                   type="number"
                   value={formPrice}
@@ -1270,7 +1511,7 @@ export default function VisualAdminProtectedPage() {
 
               <div className="space-y-2.5 sm:col-span-2 rounded-2xl border border-[#263653] bg-[#0c1322] p-3.5">
                 <div className="flex items-center justify-between">
-                  <span className="block text-xs font-bold text-slate-200">પ્રોડક્ટ ફોટો (Product Image - 1:1)</span>
+                  <span className="block text-xs font-bold text-slate-200">Product Photo (1:1)</span>
                   {formPhotoUrl && (
                     <button
                       type="button"
@@ -1285,7 +1526,7 @@ export default function VisualAdminProtectedPage() {
                 <div className="flex flex-wrap items-center gap-2.5">
                   <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/20 px-3.5 py-2 text-xs font-bold text-amber-200 transition active:scale-95 shadow-sm">
                     <ImagePlus size={16} />
-                    {formPhotoUrl ? "Change Photo (ફોટો બદલો)" : "Upload Image (ફોટો અપલોડ કરો)"}
+                    {formPhotoUrl ? "Change Photo" : "Upload Image"}
                     <input
                       type="file"
                       accept="image/*"
@@ -1298,7 +1539,7 @@ export default function VisualAdminProtectedPage() {
                             aspectRatio: 1,
                             outputWidth: 600,
                             outputHeight: 600,
-                            title: "પ્રોડક્ટ ફોટો એડજસ્ટ કરો (1:1 Product Image)",
+                            title: "Adjust Product Photo (1:1)",
                           });
                         }
                       }}
@@ -1315,13 +1556,13 @@ export default function VisualAdminProtectedPage() {
                           aspectRatio: 1,
                           outputWidth: 600,
                           outputHeight: 600,
-                          title: "પ્રોડક્ટ ફોટો એડજસ્ટ કરો (1:1 Product Image)",
+                          title: "Adjust Product Photo (1:1)",
                         })
                       }
                       className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3.5 py-2 text-xs font-bold text-slate-200 transition"
                     >
                       <Pencil size={13} className="text-orange-400" />
-                      Adjust & Crop (ક્રોપ કરો)
+                      Adjust & Crop
                     </button>
                   )}
                 </div>
@@ -1334,16 +1575,16 @@ export default function VisualAdminProtectedPage() {
                     </div>
                     <div className="text-xs space-y-0.5">
                       <span className="text-emerald-400 font-bold flex items-center gap-1">
-                        <Check size={14} /> ફોટો તૈયાર છે (Ready)
+                        <Check size={14} /> Photo is ready
                       </span>
-                      <p className="text-[11px] text-slate-400">સાચવવા માટે નીચે &ldquo;સાચવો&rdquo; બટન દબાવો.</p>
+                      <p className="text-[11px] text-slate-400">Click &ldquo;Save&rdquo; below to apply changes.</p>
                     </div>
                   </div>
                 )}
               </div>
 
               <div className="flex items-center justify-between gap-4 rounded-xl border border-[#34445f] bg-[#0a111f] p-3 sm:col-span-2">
-                <span className="text-xs font-bold text-slate-300">સ્ટોકમાં હાજર છે? (In Stock)</span>
+                <span className="text-xs font-bold text-slate-300">In Stock?</span>
                 <input
                   type="checkbox"
                   checked={formInStock}
@@ -1359,13 +1600,13 @@ export default function VisualAdminProtectedPage() {
                   onClick={() => setProductModalOpen(false)}
                   className="min-h-11 flex-1 rounded-xl border border-[#34445f] bg-[#0c1322] px-4 py-2.5 text-sm font-bold text-slate-300 transition hover:bg-[#17243b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                 >
-                  રદ કરો
+                  Cancel
                 </button>
                 <button
                   type="submit"
                   className="min-h-11 flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-orange-950/30 transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
                 >
-                  સાચવો (Save)
+                  Save
                 </button>
               </div>
             </form>
@@ -1379,13 +1620,13 @@ export default function VisualAdminProtectedPage() {
           <div role="dialog" aria-modal="true" aria-labelledby="banner-modal-title" className="my-auto flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-[#34445f] bg-[#0f172a] shadow-2xl shadow-black/50">
             <div className="flex items-center justify-between border-b border-[#263653] bg-[#152036] px-4 py-4 sm:px-6">
               <div>
-                <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-orange-300">હોમપેજ દેખાવ</p>
-                <h3 id="banner-modal-title" className="inline-flex items-center gap-2 text-base font-black text-white sm:text-lg"><ImageIcon size={18} /> સ્લાઇડર / બેનર મેનેજર</h3>
+                <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-orange-300">Homepage Appearance</p>
+                <h3 id="banner-modal-title" className="inline-flex items-center gap-2 text-base font-black text-white sm:text-lg"><ImageIcon size={18} /> Slider / Banner Manager</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setBannerModalOpen(false)}
-                aria-label="વિન્ડો બંધ કરો"
+                aria-label="Close modal"
                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#34445f] bg-[#0c1322] text-slate-400 transition hover:border-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
               >
                 <X size={18} />
@@ -1400,36 +1641,36 @@ export default function VisualAdminProtectedPage() {
               >
                 <div>
                   <h4 className="font-bold text-amber-300">
-                    {editingBannerId ? "બેનરમાં ફેરફાર કરો" : "નવું બેનર ઉમેરો"}
+                    {editingBannerId ? "Edit Banner" : "Add New Banner"}
                   </h4>
-                  <p className="mt-1 text-xs text-slate-500">સ્લાઇડરમાં દેખાડવા માટે શીર્ષક, વિગતો અને ફોટો ઉમેરો.</p>
+                  <p className="mt-1 text-xs text-slate-500">Add title, details, and photo to display in the banner slider.</p>
                 </div>
                 <input
                   type="text"
                   required
                   value={newBanTitle}
                   onChange={(e) => setNewBanTitle(e.target.value)}
-                  placeholder="બેનર શીર્ષક (દા.ત. શુદ્ધ સીંગતેલ ઓફર)"
+                  placeholder="Banner Title (e.g. Pure Groundnut Oil Offer)"
                   className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                 />
                 <input
                   type="text"
                   value={newBanTag}
                   onChange={(e) => setNewBanTag(e.target.value)}
-                  placeholder="બેજ ટેગ (દા.ત. ખાસ ઓફર)"
+                  placeholder="Badge Tag (e.g. Special Offer)"
                   className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                 />
                 <input
                   type="text"
                   value={newBanDesc}
                   onChange={(e) => setNewBanDesc(e.target.value)}
-                  placeholder="નાની વિગત (દા.ત. ૧૫ કિલો ડબ્બા પર આકર્ષક ભાવ)"
+                  placeholder="Short detail (e.g. Special discounts on 15kg tins)"
                   className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
                 />
                 {/* Banner Image Upload & Adjust */}
                 <div className="space-y-2 rounded-2xl border border-[#263653] bg-[#111c32] p-3.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-200">બેનર ફોટો (16:9 Banner Image)</span>
+                    <span className="text-xs font-bold text-slate-200">Banner Image (16:9)</span>
                     {newBanImg && (
                       <button
                         type="button"
@@ -1457,7 +1698,7 @@ export default function VisualAdminProtectedPage() {
                               aspectRatio: 16 / 9,
                               outputWidth: 1200,
                               outputHeight: 675,
-                              title: "બેનર ફોટો એડજસ્ટ કરો (16:9 Banner)",
+                              title: "Adjust Banner Photo (16:9)",
                             });
                           }
                         }}
@@ -1474,7 +1715,7 @@ export default function VisualAdminProtectedPage() {
                             aspectRatio: 16 / 9,
                             outputWidth: 1200,
                             outputHeight: 675,
-                            title: "બેનર ફોટો એડજસ્ટ કરો (16:9 Banner)",
+                            title: "Adjust Banner Photo (16:9)",
                           })
                         }
                         className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3.5 py-2 text-xs font-bold text-slate-200 transition"
@@ -1498,12 +1739,12 @@ export default function VisualAdminProtectedPage() {
                     type="url"
                     value={newBanImg.startsWith("data:") ? "" : newBanImg}
                     onChange={(e) => setNewBanImg(e.target.value)}
-                    placeholder="અથવા વેબ ઈમેજ URL દાખલ કરો (Optional Image URL)"
+                    placeholder="Or enter web image URL (Optional)"
                     className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
                   />
                 </div>
                 <label className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs font-semibold text-slate-200">
-                  <span>હોમપેજ સ્લાઇડરમાં દેખાડો</span>
+                  <span>Display on Homepage Slider</span>
                   <input
                     type="checkbox"
                     checked={newBanActive}
@@ -1517,10 +1758,10 @@ export default function VisualAdminProtectedPage() {
                   className="min-h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-black text-white shadow-lg shadow-orange-950/30 transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 disabled:cursor-wait disabled:opacity-60"
                 >
                   {isSavingBanner
-                    ? "સેવ થઈ રહ્યું છે..."
+                    ? "Saving..."
                     : editingBannerId
-                      ? "બેનર ફેરફાર સેવ કરો"
-                      : "+ બેનર સેવ કરો"}
+                      ? "Save Banner Changes"
+                      : "+ Save Banner"}
                 </button>
                 {editingBannerId && (
                   <button
@@ -1528,13 +1769,13 @@ export default function VisualAdminProtectedPage() {
                     onClick={resetBannerForm}
                     className="min-h-10 w-full rounded-xl border border-[#34445f] bg-[#152036] px-4 py-2 text-xs font-bold text-slate-300 transition hover:bg-[#1b2a44]"
                   >
-                    ફેરફાર રદ કરો
+                    Cancel
                   </button>
                 )}
               </form>
 
               <div className="space-y-2">
-                <h4 className="font-bold text-slate-200">હાલના બેનર્સ ({banners.length})</h4>
+                <h4 className="font-bold text-slate-200">Current Banners ({banners.length})</h4>
                 {banners.map((b) => (
                   <div
                     key={b.id}
@@ -1554,7 +1795,7 @@ export default function VisualAdminProtectedPage() {
                     <div className="flex shrink-0 items-center gap-1.5">
                       <button
                         onClick={() => handleToggleBanner(b)}
-                        aria-label={b.active ? `${b.title} છુપાવો` : `${b.title} સક્રિય કરો`}
+                        aria-label={b.active ? `Hide ${b.title}` : `Activate ${b.title}`}
                         aria-pressed={b.active}
                         className={`min-h-9 rounded-lg border px-2 text-[10px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 ${
                           b.active
@@ -1562,18 +1803,18 @@ export default function VisualAdminProtectedPage() {
                             : "border-slate-500/30 bg-slate-500/10 text-slate-300 hover:bg-slate-500/20"
                         }`}
                       >
-                        {b.active ? "સક્રિય" : "છુપાવેલ"}
+                        {b.active ? "Active" : "Hidden"}
                       </button>
                       <button
                         onClick={() => handleEditBanner(b)}
-                        aria-label={`${b.title} સંપાદિત કરો`}
+                        aria-label={`Edit ${b.title}`}
                         className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/10 p-1 font-bold text-amber-300 transition hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                       >
                         <Pencil size={15} />
                       </button>
                       <button
                         onClick={() => handleDeleteBanner(b)}
-                        aria-label={`${b.title} દૂર કરો`}
+                        aria-label={`Delete ${b.title}`}
                         className="flex h-10 w-10 items-center justify-center rounded-xl border border-rose-500/20 bg-rose-500/10 p-1 font-bold text-rose-300 transition hover:bg-rose-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                       >
                         <Trash2 size={15} />
@@ -1587,16 +1828,176 @@ export default function VisualAdminProtectedPage() {
         </div>
       )}
 
-      {isOrdersModalOpen && <div className="fixed inset-0 z-[55] flex items-center justify-center overflow-y-auto bg-black/80 p-3 backdrop-blur-sm sm:p-6"><section role="dialog" aria-modal="true" aria-labelledby="orders-title" className="my-auto flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-[#34445f] bg-[#0f172a] shadow-2xl"><header className="flex items-center justify-between border-b border-[#263653] bg-[#152036] px-4 py-4 sm:px-6"><div><h2 id="orders-title" className="inline-flex items-center gap-2 text-lg font-black text-white"><ClipboardList size={20} />Order archive</h2><p className="text-xs text-slate-400">Customer-submitted WhatsApp orders</p></div><button onClick={() => setOrdersModalOpen(false)} aria-label="Close order archive" className="rounded-lg p-2 text-slate-300"><X size={19} /></button></header><div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">{orders.length === 0 ? <p className="rounded-xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">No archived orders yet.</p> : orders.map((order) => <article key={order.id} className="rounded-2xl border border-[#263653] bg-[#111c32] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold text-white">{order.customerName} · {order.customerPhone}</h3><p className="mt-1 text-xs text-slate-400">{order.fulfillment === "pickup" ? "Store pickup" : `Home delivery · ${order.deliverySlot ?? "slot not specified"}`} · {order.createdAt?.toDate?.().toLocaleString("en-IN") ?? "Recent order"}</p></div><strong className="text-amber-300">₹{Number(order.total).toFixed(2)}</strong></div><ul className="my-3 space-y-1 border-y border-slate-700 py-2 text-xs text-slate-300">{order.items.map((item, index) => <li key={`${order.id}-${item.id}-${index}`} className="flex justify-between gap-2"><span>{item.name} × {item.quantity}</span><span>₹{(item.price * item.quantity).toFixed(2)}</span></li>)}</ul><div className="flex flex-wrap gap-2"><button onClick={() => printThermalReceipt(order)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-200"><Printer size={15} />Print bill</button><button onClick={() => copyOrderTemplate(order, "packed")} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200"><Copy size={15} />Packed · 15 min</button><button onClick={() => copyOrderTemplate(order, "ready")} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200"><MessageCircle size={15} />Pickup ready</button><a href={`https://wa.me/${order.customerPhone}?text=${encodeURIComponent(`તમારો ઓર્ડર પેક થઈ ગયો છે, ૧૫ મિનિટમાં પહોંચશે. ઓર્ડર: ${order.id.slice(-8)}`)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#25D366] px-3 py-2 text-xs font-bold text-white"><MessageCircle size={15} />WhatsApp customer</a></div></article>)}</div></section></div>}
+      {isOrdersModalOpen && (
+        <div className="fixed inset-0 z-[55] flex items-center justify-center overflow-y-auto bg-black/80 p-3 backdrop-blur-sm sm:p-6">
+          <section role="dialog" aria-modal="true" aria-labelledby="orders-title" className="my-auto flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-[#34445f] bg-[#0f172a] shadow-2xl">
+            <header className="flex items-center justify-between border-b border-[#263653] bg-[#152036] px-4 py-4 sm:px-6">
+              <div>
+                <h2 id="orders-title" className="inline-flex items-center gap-2 text-lg font-black text-white">
+                  <ClipboardList size={20} /> Order Archive
+                </h2>
+                <p className="text-xs text-slate-400">Customer-submitted WhatsApp orders ({orders.length})</p>
+              </div>
+              <button onClick={() => setOrdersModalOpen(false)} aria-label="Close order archive" className="rounded-lg p-2 text-slate-300 hover:text-white">
+                <X size={19} />
+              </button>
+            </header>
+
+            {/* 2. Order Archive Bulk & All Delete Toolbar */}
+            {orders.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#263653] bg-[#101a2d] px-4 py-3 sm:px-6">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-300 hover:text-white select-none">
+                  <input
+                    type="checkbox"
+                    checked={orders.length > 0 && selectedOrderIds.length === orders.length}
+                    onChange={handleSelectAllOrders}
+                    className="h-4 w-4 rounded accent-orange-500 cursor-pointer"
+                  />
+                  <span>Select All ({selectedOrderIds.length}/{orders.length})</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  {selectedOrderIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteSelectedOrders}
+                      disabled={isDeletingOrders}
+                      className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-bold text-rose-300 transition hover:bg-rose-500/25 disabled:opacity-50"
+                    >
+                      <Trash2 size={13} /> Delete Selected ({selectedOrderIds.length})
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleClearAllOrders}
+                    disabled={isDeletingOrders}
+                    className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-bold text-slate-300 transition hover:border-rose-400/40 hover:bg-rose-950/40 hover:text-rose-200 disabled:opacity-50"
+                  >
+                    <Trash2 size={13} /> Clear All Orders
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
+              {orders.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">
+                  No archived orders yet.
+                </p>
+              ) : (
+                orders.map((order) => {
+                  const isSelected = selectedOrderIds.includes(order.id);
+                  return (
+                    <article
+                      key={order.id}
+                      className={`rounded-2xl border p-4 transition-colors ${
+                        isSelected
+                          ? "border-orange-500/50 bg-[#16233d]"
+                          : "border-[#263653] bg-[#111c32]"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <label className="flex items-center gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectOrder(order.id)}
+                            className="h-4 w-4 rounded accent-orange-500 cursor-pointer"
+                          />
+                          <div>
+                            <h3 className="font-bold text-white">
+                              {order.customerName} · {order.customerPhone}
+                            </h3>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {order.fulfillment === "pickup" ? "Store pickup" : `Home delivery · ${order.deliverySlot ?? "standard"}`} · {order.createdAt?.toDate?.().toLocaleString("en-IN") ?? "Recent order"}
+                            </p>
+                          </div>
+                        </label>
+                        <strong className="text-amber-300">₹{Number(order.total).toFixed(2)}</strong>
+                      </div>
+                      <ul className="my-3 space-y-1 border-y border-slate-700 py-2 text-xs text-slate-300">
+                        {order.items.map((item, index) => (
+                          <li key={`${order.id}-${item.id}-${index}`} className="flex justify-between gap-2">
+                            <span>{item.name} × {item.quantity}</span>
+                            <span>₹{(item.price * item.quantity).toFixed(2)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => printThermalReceipt(order)}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/20"
+                        >
+                          <Printer size={15} /> Print bill
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copyOrderTemplate(order, "packed")}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/20"
+                        >
+                          <Copy size={15} /> Packed · 15 min
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copyOrderTemplate(order, "ready")}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/20"
+                        >
+                          <MessageCircle size={15} /> Pickup ready
+                        </button>
+                        <a
+                          href={`https://wa.me/${order.customerPhone}?text=${encodeURIComponent(
+                            `Your order is packed and will be delivered in 15 mins. Order ID: ${order.id.slice(-8)}`
+                          )}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#25D366] px-3 py-2 text-xs font-bold text-white hover:bg-[#20ba59]"
+                        >
+                          <MessageCircle size={15} /> WhatsApp customer
+                        </a>
+                      </div>
+                    </article>
+                  );
+                })
+              )}
+            </div>
+          </section>
+        </div>
+      )}
 
       {isSettingsModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-3 backdrop-blur-sm sm:p-6">
-          <section role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" className="glass-panel my-auto flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-[#0f172a]/80 shadow-2xl shadow-black/50">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-modal-title"
+            className="glass-panel my-auto flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-[#0f172a]/90 shadow-2xl shadow-black/50"
+          >
             <header className="flex items-center justify-between border-b border-[#263653] bg-[#152036] px-4 py-4 sm:px-6">
-              <div>
-                <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-orange-300">Store configuration</p>
-                <h2 id="settings-modal-title" className="text-lg font-black text-white">Store Settings</h2>
-              </div>
+              {settingsView === 'menu' ? (
+                <div>
+                  <p className="mb-1 text-[10px] font-black uppercase tracking-[0.18em] text-orange-300">Store configuration</p>
+                  <h2 id="settings-modal-title" className="text-lg font-black text-white">Store Settings</h2>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSettingsView('menu')}
+                    className="group flex h-9 items-center gap-1.5 rounded-xl border border-[#34445f] bg-[#0c1322] px-3 text-xs font-bold text-slate-300 transition-all hover:border-orange-500/40 hover:bg-[#1a253c] hover:text-white"
+                  >
+                    <ChevronLeft size={16} className="text-orange-400 transition-transform group-hover:-translate-x-0.5" />
+                    Back to Settings
+                  </button>
+                  <h2 id="settings-modal-title" className="text-base font-black text-white sm:text-lg">
+                    {settingsView === 'profile' && "Store Profile & Branding"}
+                    {settingsView === 'hours' && "Operating Hours & WhatsApp"}
+                    {settingsView === 'categories' && "Categories Management"}
+                    {settingsView === 'payments' && "Payments & Checkout"}
+                    {settingsView === 'offers' && "Offers & Announcements"}
+                    {settingsView === 'backup' && "Data & Backups"}
+                  </h2>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setSettingsModalOpen(false)}
@@ -1608,296 +2009,876 @@ export default function VisualAdminProtectedPage() {
             </header>
 
             <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
-              <form onSubmit={handleSaveSettings} className="space-y-4">
-                <section id="settings-module-store" className="glass-panel interactive-lift scroll-mt-4 space-y-4 p-4 sm:p-5">
-                  <div className="flex items-center justify-between border-b border-[#263653] pb-3">
-                    <div>
-                      <h3 className="text-sm font-black text-white">Store Branding & Logo</h3>
-                      <p className="text-xs text-slate-400">Manage your store identity, custom logo, and home screen PWA banner</p>
-                    </div>
-                  </div>
-
-                  <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
-                    Store name
-                    <input
-                      type="text"
-                      value={settingsForm.storeName}
-                      onChange={(event) => setSettingsForm((current) => ({ ...current, storeName: event.target.value }))}
-                      className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none"
-                    />
-                  </label>
-
-                  {/* Logo Management with Live Circular Preview */}
-                  <div className="rounded-2xl border border-[#34445f] bg-[#111c32] p-4 space-y-3">
-                    <span className="text-xs font-bold text-slate-200 block">Store Logo</span>
-                    <div className="flex flex-col sm:flex-row items-center gap-4">
-                      {/* Live Circular Preview Thumbnail */}
-                      <div className="relative group shrink-0 flex flex-col items-center">
-                        <div className="w-16 h-16 rounded-full border-2 border-orange-400 shadow-md bg-stone-900 flex items-center justify-center overflow-hidden">
-                          {settingsForm.logoUrl ? (
-                            <img
-                              src={settingsForm.logoUrl}
-                              alt="Store logo preview"
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <Store className="text-orange-400" size={28} />
-                          )}
+              {/* MASTER SETTINGS SCREEN */}
+              {settingsView === 'menu' && (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {/* 1. Store Profile & Branding */}
+                    <button
+                      type="button"
+                      onClick={() => setSettingsView('profile')}
+                      className="group flex items-center justify-between gap-4 rounded-2xl border border-[#263653] bg-[#111c32] p-4 text-left shadow-md transition-all duration-200 hover:border-orange-500/40 hover:bg-[#15233e] hover:shadow-lg active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-orange-500/25 bg-orange-500/10 text-orange-400 shadow-sm transition-transform group-hover:scale-105">
+                          <Store size={22} />
                         </div>
-                        <span className="mt-1 block text-center text-[10px] font-semibold text-slate-400">Preview</span>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-black text-white group-hover:text-orange-300 transition-colors">Store Profile & Branding</h3>
+                          <p className="mt-0.5 truncate text-xs text-slate-400">Name, custom logo, PWA banner & social links</p>
+                        </div>
                       </div>
+                      <ChevronRight size={19} className="shrink-0 text-slate-500 transition-transform group-hover:translate-x-1 group-hover:text-orange-400" />
+                    </button>
 
-                      {/* Inputs: URL and File Upload */}
-                      <div className="flex-1 w-full space-y-2">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                            Logo image URL
-                          </label>
-                          <input
-                            type="url"
-                            value={settingsForm.logoUrl.startsWith("data:") ? "" : settingsForm.logoUrl}
-                            onChange={(event) => {
-                              const url = event.target.value;
-                              setSettingsForm((current) => ({
-                                ...current,
-                                logoUrl: url,
-                                logoMode: url ? "image" : current.logoMode,
-                              }));
-                            }}
-                            placeholder="https://example.com/logo.png"
-                            className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
-                          />
+                    {/* 2. Operating Hours & WhatsApp */}
+                    <button
+                      type="button"
+                      onClick={() => setSettingsView('hours')}
+                      className="group flex items-center justify-between gap-4 rounded-2xl border border-[#263653] bg-[#111c32] p-4 text-left shadow-md transition-all duration-200 hover:border-amber-500/40 hover:bg-[#15233e] hover:shadow-lg active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-500/25 bg-amber-500/10 text-amber-400 shadow-sm transition-transform group-hover:scale-105">
+                          <Clock size={22} />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-black text-white group-hover:text-amber-300 transition-colors">Operating Hours & WhatsApp</h3>
+                          <p className="mt-0.5 truncate text-xs text-slate-400">Fixed +91 mobile, address, 12h timings & min order</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={19} className="shrink-0 text-slate-500 transition-transform group-hover:translate-x-1 group-hover:text-amber-400" />
+                    </button>
+
+                    {/* 3. Categories Management */}
+                    <button
+                      type="button"
+                      onClick={() => setSettingsView('categories')}
+                      className="group flex items-center justify-between gap-4 rounded-2xl border border-[#263653] bg-[#111c32] p-4 text-left shadow-md transition-all duration-200 hover:border-emerald-500/40 hover:bg-[#15233e] hover:shadow-lg active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 shadow-sm transition-transform group-hover:scale-105">
+                          <Tag size={22} />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-black text-white group-hover:text-emerald-300 transition-colors">Categories Management</h3>
+                          <p className="mt-0.5 truncate text-xs text-slate-400">Shop categories, icons, reordering & deletion</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={19} className="shrink-0 text-slate-500 transition-transform group-hover:translate-x-1 group-hover:text-emerald-400" />
+                    </button>
+
+                    {/* 4. Payments & Checkout */}
+                    <button
+                      type="button"
+                      onClick={() => setSettingsView('payments')}
+                      className="group flex items-center justify-between gap-4 rounded-2xl border border-[#263653] bg-[#111c32] p-4 text-left shadow-md transition-all duration-200 hover:border-sky-500/40 hover:bg-[#15233e] hover:shadow-lg active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-sky-500/25 bg-sky-500/10 text-sky-400 shadow-sm transition-transform group-hover:scale-105">
+                          <CreditCard size={22} />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-black text-white group-hover:text-sky-300 transition-colors">Payments & Checkout</h3>
+                          <p className="mt-0.5 truncate text-xs text-slate-400">UPI ID, Payee name & custom payment QR preview</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={19} className="shrink-0 text-slate-500 transition-transform group-hover:translate-x-1 group-hover:text-sky-400" />
+                    </button>
+
+                    {/* 5. Offers & Announcements */}
+                    <button
+                      type="button"
+                      onClick={() => setSettingsView('offers')}
+                      className="group flex items-center justify-between gap-4 rounded-2xl border border-[#263653] bg-[#111c32] p-4 text-left shadow-md transition-all duration-200 hover:border-pink-500/40 hover:bg-[#15233e] hover:shadow-lg active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-pink-500/25 bg-pink-500/10 text-pink-400 shadow-sm transition-transform group-hover:scale-105">
+                          <Megaphone size={22} />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-black text-white group-hover:text-pink-300 transition-colors">Offers & Announcements</h3>
+                          <p className="mt-0.5 truncate text-xs text-slate-400">Top sticky notice alert & first-visit popup banner</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={19} className="shrink-0 text-slate-500 transition-transform group-hover:translate-x-1 group-hover:text-pink-400" />
+                    </button>
+
+                    {/* 6. Data & Backups */}
+                    <button
+                      type="button"
+                      onClick={() => setSettingsView('backup')}
+                      className="group flex items-center justify-between gap-4 rounded-2xl border border-[#263653] bg-[#111c32] p-4 text-left shadow-md transition-all duration-200 hover:border-purple-500/40 hover:bg-[#15233e] hover:shadow-lg active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-purple-500/25 bg-purple-500/10 text-purple-400 shadow-sm transition-transform group-hover:scale-105">
+                          <Database size={22} />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-black text-white group-hover:text-purple-300 transition-colors">Data & Backups</h3>
+                          <p className="mt-0.5 truncate text-xs text-slate-400">Export or restore full JSON store database backups</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={19} className="shrink-0 text-slate-500 transition-transform group-hover:translate-x-1 group-hover:text-purple-400" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 1. STORE PROFILE SUBVIEW */}
+              {settingsView === 'profile' && (
+                <form onSubmit={handleSaveSettings} className="space-y-4">
+                  <section className="glass-panel space-y-4 p-4 sm:p-5">
+                    <div>
+                      <h3 className="text-sm font-black text-white">Store Identity & Logo</h3>
+                      <p className="text-xs text-slate-400">Manage your store title, custom branding logo, and PWA installation banner</p>
+                    </div>
+
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      Store name
+                      <input
+                        type="text"
+                        value={settingsForm.storeName}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, storeName: event.target.value }))}
+                        className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none"
+                      />
+                    </label>
+
+                    {/* Logo Management */}
+                    <div className="rounded-2xl border border-[#34445f] bg-[#111c32] p-4 space-y-3">
+                      <span className="text-xs font-bold text-slate-200 block">Store Logo</span>
+                      <div className="flex flex-col sm:flex-row items-center gap-4">
+                        <div className="relative group shrink-0 flex flex-col items-center">
+                          <div className="w-16 h-16 rounded-full border-2 border-orange-400 shadow-md bg-stone-900 flex items-center justify-center overflow-hidden">
+                            {settingsForm.logoUrl ? (
+                              <img
+                                src={settingsForm.logoUrl}
+                                alt="Store logo preview"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Store className="text-orange-400" size={28} />
+                            )}
+                          </div>
+                          <span className="mt-1 block text-center text-[10px] font-semibold text-slate-400">Preview</span>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
-                          <label className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition">
-                            <ImagePlus size={15} className="text-orange-400" />
-                            {settingsForm.logoUrl ? "Change logo image" : "Upload logo image"}
+                        <div className="flex-1 w-full space-y-2">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                              Logo image URL
+                            </label>
                             <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                e.target.value = "";
-                                if (file) {
-                                  openCropperForFile(file, {
+                              type="url"
+                              value={settingsForm.logoUrl.startsWith("data:") ? "" : settingsForm.logoUrl}
+                              onChange={(event) => {
+                                const url = event.target.value;
+                                setSettingsForm((current) => ({
+                                  ...current,
+                                  logoUrl: url,
+                                  logoMode: url ? "image" : current.logoMode,
+                                }));
+                              }}
+                              placeholder="https://example.com/logo.png"
+                              className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition">
+                              <ImagePlus size={15} className="text-orange-400" />
+                              {settingsForm.logoUrl ? "Change logo image" : "Upload logo image"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = "";
+                                  if (file) {
+                                    openCropperForFile(file, {
+                                      type: "logo",
+                                      aspectRatio: 1,
+                                      outputWidth: 400,
+                                      outputHeight: 400,
+                                      title: "Adjust Store Logo (1:1)",
+                                    });
+                                  }
+                                }}
+                                className="sr-only"
+                              />
+                            </label>
+
+                            {settingsForm.logoUrl && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openCropperForUrl(settingsForm.logoUrl, {
                                     type: "logo",
                                     aspectRatio: 1,
                                     outputWidth: 400,
                                     outputHeight: 400,
-                                    title: "સ્ટોર લોગો એડજસ્ટ કરો (1:1 Store Logo)",
-                                  });
+                                    title: "Adjust Store Logo (1:1)",
+                                  })
                                 }
-                              }}
-                              className="sr-only"
-                            />
-                          </label>
+                                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition"
+                              >
+                                <Pencil size={13} className="text-orange-400" />
+                                Adjust & Crop
+                              </button>
+                            )}
 
-                          {settingsForm.logoUrl && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openCropperForUrl(settingsForm.logoUrl, {
-                                  type: "logo",
-                                  aspectRatio: 1,
-                                  outputWidth: 400,
-                                  outputHeight: 400,
-                                  title: "સ્ટોર લોગો એડજસ્ટ કરો (1:1 Store Logo)",
-                                })
-                              }
-                              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition"
-                            >
-                              <Pencil size={13} className="text-orange-400" />
-                              Adjust & Crop
-                            </button>
-                          )}
-
-                          {settingsForm.logoUrl && (
-                            <button
-                              type="button"
-                              onClick={() => setSettingsForm((current) => ({ ...current, logoUrl: "", logoMode: "icon" }))}
-                              className="inline-flex min-h-9 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/20 transition"
-                            >
-                              Reset to default icon
-                            </button>
-                          )}
+                            {settingsForm.logoUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setSettingsForm((current) => ({ ...current, logoUrl: "", logoMode: "icon" }))}
+                                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/20 transition"
+                              >
+                                Reset to default icon
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* PWA Home Screen Install Banner Toggle */}
-                  <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl border border-[#34445f] bg-[#111c32]">
-                    <div className="space-y-0.5">
-                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <span>📲</span>
-                        <span>Show Install Banner on Home Screen (Yes/No)</span>
+                    {/* PWA Home Screen Install Banner Toggle */}
+                    <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl border border-[#34445f] bg-[#111c32]">
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <span>📲</span>
+                          <span>Show Install Banner on Home Screen (Yes/No)</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400">
+                          Display the floating PWA install prompt to visitors.
+                        </p>
                       </div>
-                      <p className="text-[11px] text-slate-400">
-                        Display the floating &ldquo;📲 જય વછરાજ એપ ઇન્સ્ટોલ કરો&rdquo; PWA install prompt to visitors.
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettingsForm((current) => ({
+                            ...current,
+                            showInstallBanner: !current.showInstallBanner,
+                          }))
+                        }
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition shrink-0 shadow-sm ${
+                          settingsForm.showInstallBanner
+                            ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                            : "bg-slate-700 hover:bg-slate-600 text-slate-300"
+                        }`}
+                      >
+                        {settingsForm.showInstallBanner ? "Yes" : "No"}
+                      </button>
+                    </div>
+                  </section>
+
+                  {/* Social Media and Location */}
+                  <section className="glass-panel space-y-3 p-3 sm:p-4">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Social Media & Location</h4>
+                      <p className="mt-1 text-xs text-slate-400">Manage public links and map coordinates displayed in the storefront footer.</p>
+                    </div>
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      Google Maps URL
+                      <input
+                        type="url"
+                        value={settingsForm.mapLink}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, mapLink: event.target.value }))}
+                        className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white"
+                      />
+                    </label>
+                    <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                      <input
+                        value={socialLabel}
+                        onChange={(event) => setSocialLabel(event.target.value)}
+                        placeholder="Instagram, Facebook, YouTube…"
+                        className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white"
+                      />
+                      <input
+                        type="url"
+                        value={socialUrl}
+                        onChange={(event) => setSocialUrl(event.target.value)}
+                        placeholder="https://…"
+                        className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={addSocialLink}
+                        className="inline-flex min-h-10 items-center justify-center gap-1 rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-sky-500"
+                      >
+                        <Plus size={15} />
+                        Add
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {settingsForm.socialLinks.map((link) => (
+                        <div key={link.id} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                          <input
+                            aria-label="Social link label"
+                            value={link.label}
+                            onChange={(event) =>
+                              setSettingsForm((current) => ({
+                                ...current,
+                                socialLinks: current.socialLinks.map((item) => (item.id === link.id ? { ...item, label: event.target.value } : item)),
+                              }))
+                            }
+                            className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white"
+                          />
+                          <input
+                            aria-label="Social link URL"
+                            type="url"
+                            value={link.url}
+                            onChange={(event) =>
+                              setSettingsForm((current) => ({
+                                ...current,
+                                socialLinks: current.socialLinks.map((item) => (item.id === link.id ? { ...item, url: event.target.value } : item)),
+                              }))
+                            }
+                            className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSettingsForm((current) => ({
+                                ...current,
+                                socialLinks: current.socialLinks.filter((item) => item.id !== link.id),
+                              }))
+                            }
+                            aria-label={`Remove ${link.label}`}
+                            className="rounded-lg p-2 text-rose-300 hover:bg-rose-500/10"
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  {/* Dedicated Save button */}
+                  <button
+                    type="submit"
+                    disabled={isSavingSettings}
+                    className="interactive-lift min-h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-black text-white transition-all duration-200 hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isSavingSettings ? "Saving settings..." : "Save Store Settings"}
+                  </button>
+                </form>
+              )}
+
+              {/* 2. OPERATING HOURS & WHATSAPP SUBVIEW */}
+              {settingsView === 'hours' && (
+                <form onSubmit={handleSaveSettings} className="space-y-4">
+                  <section className="glass-panel space-y-4 p-4 sm:p-5">
+                    <div>
+                      <h3 className="text-sm font-black text-white">Contact & Operating Schedule</h3>
+                      <p className="text-xs text-slate-400">Configure WhatsApp customer ordering number, physical store address, and opening hours</p>
+                    </div>
+
+                    {/* WhatsApp order mobile number (+91 fixed, 10-digit input) */}
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      WhatsApp order mobile number (with country code)
+                      <div className="flex items-center space-x-2">
+                        <span className="inline-flex h-11 items-center justify-center rounded-xl border border-[#34445f] bg-[#152036] px-3.5 text-sm font-bold text-orange-400">
+                          +91
+                        </span>
+                        <input
+                          type="tel"
+                          value={settingsForm.whatsappNumber}
+                          onChange={(event) => {
+                            const val = event.target.value.replace(/\D/g, "");
+                            setSettingsForm((current) => ({ ...current, whatsappNumber: val.slice(0, 10) }));
+                          }}
+                          placeholder="10-digit mobile number"
+                          maxLength={10}
+                          pattern="[0-9]{10}"
+                          className="flex-1 rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+                        />
+                      </div>
+                    </label>
+
+                    {/* Store Address */}
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      Store address
+                      <input
+                        type="text"
+                        value={settingsForm.address}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, address: event.target.value }))}
+                        placeholder="Shop address, street, landmark, city"
+                        className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+                      />
+                    </label>
+
+                    {/* Store timings display text */}
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      Store timings display label
+                      <input
+                        type="text"
+                        value={settingsForm.hours}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, hours: event.target.value }))}
+                        placeholder="7:00 AM - 10:00 PM"
+                        className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+                      />
+                    </label>
+
+                    {/* Daily Schedule & Min Delivery */}
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <label className="space-y-1 text-xs text-slate-300">
+                        Opens (12-hour)
+                        <input
+                          type="text"
+                          placeholder="6:00 AM"
+                          value={settingsForm.openingTime}
+                          onChange={(event) => setSettingsForm((current) => ({ ...current, openingTime: event.target.value }))}
+                          className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2.5 text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
+                        />
+                      </label>
+                      <label className="space-y-1 text-xs text-slate-300">
+                        Closes (12-hour)
+                        <input
+                          type="text"
+                          placeholder="9:00 PM"
+                          value={settingsForm.closingTime}
+                          onChange={(event) => setSettingsForm((current) => ({ ...current, closingTime: event.target.value }))}
+                          className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2.5 text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
+                        />
+                      </label>
+                      <label className="space-y-1 text-xs text-slate-300">
+                        Minimum delivery ₹
+                        <input
+                          type="number"
+                          min="0"
+                          value={settingsForm.minimumDeliveryOrder}
+                          onChange={(event) => setSettingsForm((current) => ({ ...current, minimumDeliveryOrder: Number(event.target.value) }))}
+                          className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2.5 text-white focus:border-orange-400 focus:outline-none"
+                        />
+                      </label>
+                    </div>
+                  </section>
+
+                  {/* Dedicated Save button */}
+                  <button
+                    type="submit"
+                    disabled={isSavingSettings}
+                    className="interactive-lift min-h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-black text-white transition-all duration-200 hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isSavingSettings ? "Saving settings..." : "Save Store Settings"}
+                  </button>
+                </form>
+              )}
+
+              {/* 3. CATEGORIES MANAGEMENT SUBVIEW */}
+              {settingsView === 'categories' && (
+                <form onSubmit={handleSaveSettings} className="space-y-4">
+                  <section className="glass-panel space-y-3 p-4 sm:p-5">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Shop Categories</h4>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Edit labels/icons, change display order, or remove categories. Product assignments are moved when saved.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSettingsForm((current) => ({
-                          ...current,
-                          showInstallBanner: !current.showInstallBanner,
-                        }))
-                      }
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition shrink-0 shadow-sm ${
-                        settingsForm.showInstallBanner
-                          ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                          : "bg-slate-700 hover:bg-slate-600 text-slate-300"
-                      }`}
-                    >
-                      {settingsForm.showInstallBanner ? "Yes" : "No"}
-                    </button>
-                  </div>
-                </section>
 
-                <section id="settings-module-inventory" className="glass-panel interactive-lift scroll-mt-4 space-y-3 p-3 sm:p-4">
-                  <div><h4 className="text-sm font-bold text-white">Shop categories</h4><p className="mt-1 text-xs text-slate-400">Edit labels/icons, change display order, or remove a category. Product assignments are moved when saved.</p></div>
-                  <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto]">
-                    <input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="Category name" className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white" />
-                    <select value={categoryIcon} onChange={(event) => setCategoryIcon(event.target.value)} className="rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white"><option value="Wheat">Wheat</option><option value="Droplets">Oil</option><option value="Flame">Spices</option><option value="Cookie">Snacks</option><option value="Sparkles">Care</option><option value="Lamp">Pooja</option></select>
-                    <button type="button" onClick={saveCategoryDraft} className="inline-flex min-h-10 items-center justify-center gap-1 rounded-lg bg-orange-500 px-3 py-2 text-xs font-bold text-white"><Plus size={15} />{editingCategoryId ? "Update" : "Add"}</button>
-                  </div>
-                  <div className="space-y-2">{(settingsForm.categories.length ? settingsForm.categories : DEFAULT_CATEGORIES).map((category, index, categories) => <div key={category.id} className="flex items-center gap-2 rounded-lg border border-[#34445f] bg-[#0c1322] p-2"><span className="min-w-0 flex-1 truncate text-sm font-semibold text-white">{category.name}<span className="ml-2 text-[10px] text-slate-500">{category.icon}</span></span><button type="button" onClick={() => moveCategory(category.id, -1)} disabled={index === 0} aria-label={`Move ${category.name} up`} className="rounded-md p-1.5 text-slate-300 disabled:opacity-30"><ArrowUp size={15} /></button><button type="button" onClick={() => moveCategory(category.id, 1)} disabled={index === categories.length - 1} aria-label={`Move ${category.name} down`} className="rounded-md p-1.5 text-slate-300 disabled:opacity-30"><ArrowDown size={15} /></button><button type="button" onClick={() => { setEditingCategoryId(category.id); setCategoryName(category.name); setCategoryIcon(category.icon); }} aria-label={`Edit ${category.name}`} className="rounded-md p-1.5 text-amber-300"><Pencil size={15} /></button><button type="button" onClick={() => deleteCategory(category)} aria-label={`Delete ${category.name}`} className="rounded-md p-1.5 text-rose-300"><Trash2 size={15} /></button></div>)}</div>
-                </section>
-
-                <section className="glass-panel interactive-lift space-y-3 p-3 sm:p-4">
-                  <div><h4 className="text-sm font-bold text-white">Social media and location</h4><p className="mt-1 text-xs text-slate-400">Manage public links displayed in the storefront footer.</p></div>
-                  <label className="block space-y-1.5 text-xs font-semibold text-slate-300">Google Maps URL<input type="url" value={settingsForm.mapLink} onChange={(event) => setSettingsForm((current) => ({ ...current, mapLink: event.target.value }))} className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white" /></label>
-                  <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><input value={socialLabel} onChange={(event) => setSocialLabel(event.target.value)} placeholder="Instagram, Facebook, YouTube…" className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white" /><input type="url" value={socialUrl} onChange={(event) => setSocialUrl(event.target.value)} placeholder="https://…" className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white" /><button type="button" onClick={addSocialLink} className="inline-flex min-h-10 items-center justify-center gap-1 rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white"><Plus size={15} />Add</button></div>
-                  <div className="space-y-2">{settingsForm.socialLinks.map((link) => <div key={link.id} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><input aria-label="Social link label" value={link.label} onChange={(event) => setSettingsForm((current) => ({ ...current, socialLinks: current.socialLinks.map((item) => item.id === link.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white" /><input aria-label="Social link URL" type="url" value={link.url} onChange={(event) => setSettingsForm((current) => ({ ...current, socialLinks: current.socialLinks.map((item) => item.id === link.id ? { ...item, url: event.target.value } : item) }))} className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white" /><button type="button" onClick={() => setSettingsForm((current) => ({ ...current, socialLinks: current.socialLinks.filter((item) => item.id !== link.id) }))} aria-label={`Remove ${link.label}`} className="rounded-lg p-2 text-rose-300"><Trash2 size={17} /></button></div>)}</div>
-                </section>
-
-                <section id="settings-module-announcement" className="glass-panel interactive-lift scroll-mt-4 space-y-3 p-3 sm:p-4">
-                <label className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-white/20 bg-slate-950/30 px-3 py-2 text-sm font-semibold text-slate-200">
-                  <span>Show sticky notice bar</span>
-                  <input
-                    type="checkbox"
-                    checked={settingsForm.noticeEnabled}
-                    onChange={(event) => setSettingsForm((current) => ({ ...current, noticeEnabled: event.target.checked }))}
-                    className="h-5 w-5 accent-orange-500"
-                  />
-                </label>
-                <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
-                  Notice text
-                  <textarea
-                    rows={3}
-                    value={settingsForm.noticeText}
-                    onChange={(event) => setSettingsForm((current) => ({ ...current, noticeText: event.target.value }))}
-                    className="w-full resize-y rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
-                  />
-                </label>
-                  <label className="flex items-center justify-between gap-3 text-sm font-bold text-white">Enable first-visit offer popup<input type="checkbox" checked={settingsForm.promoEnabled} onChange={(event) => setSettingsForm((current) => ({ ...current, promoEnabled: event.target.checked }))} className="h-5 w-5 accent-amber-500" /></label>
-                  <input value={settingsForm.promoTitle} onChange={(event) => setSettingsForm((current) => ({ ...current, promoTitle: event.target.value }))} placeholder="Offer headline" className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-sm text-white" />
-                  <textarea rows={2} value={settingsForm.promoText} onChange={(event) => setSettingsForm((current) => ({ ...current, promoText: event.target.value }))} placeholder="Offer details" className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-sm text-white" />
-                  <input type="url" value={settingsForm.promoImageUrl} onChange={(event) => setSettingsForm((current) => ({ ...current, promoImageUrl: event.target.value }))} placeholder="Offer image URL (optional)" className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-sm text-white" />
-                </section>
-
-                <section id="settings-module-payments" className="glass-panel interactive-lift scroll-mt-4 space-y-3 p-3 sm:p-4">
-                <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
-                  WhatsApp order mobile number (with country code)
-                  <div className="flex items-center space-x-2">
-                    <span className="inline-block rounded bg-[#152036] px-2 py-1 text-sm text-white">+91</span>
-                    <input
-                      type="tel"
-                      value={settingsForm.whatsappNumber}
-                      onChange={(event) => {
-                        const val = event.target.value.replace(/\D/g, "");
-                        setSettingsForm((current) => ({ ...current, whatsappNumber: val.slice(0,10) }));
-                      }}
-                      placeholder="1234567890"
-                      maxLength={10}
-                      pattern="[0-9]{10}"
-                      className="flex-1 rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
-                    />
-                  </div>
-                </label>
-                <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
-                  Store address
-                  <input
-                    type="text"
-                    value={settingsForm.address}
-                    onChange={(event) => setSettingsForm((current) => ({ ...current, address: event.target.value }))}
-                    className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
-                  />
-                </label>
-                <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
-                  Store timings
-                  <input
-                    type="text"
-                    value={settingsForm.hours}
-                    onChange={(event) => setSettingsForm((current) => ({ ...current, hours: event.target.value }))}
-                    placeholder="7:00 AM - 10:00 PM"
-                    className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
-                  />
-                </label>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <label className="space-y-1 text-xs text-slate-300">
-                      Opens (12-hour)
+                    <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto]">
                       <input
-                        type="text"
-                        placeholder="6:00 AM"
-                        value={settingsForm.openingTime}
-                        onChange={(event) => setSettingsForm((current) => ({ ...current, openingTime: event.target.value }))}
-                        className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white placeholder:text-slate-500"
+                        value={categoryName}
+                        onChange={(event) => setCategoryName(event.target.value)}
+                        placeholder="Category name (e.g. Grains)"
+                        className="min-w-0 rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white focus:border-orange-400 focus:outline-none"
                       />
-                    </label>
-                    <label className="space-y-1 text-xs text-slate-300">
-                      Closes (12-hour)
-                      <input
-                        type="text"
-                        placeholder="9:00 PM"
-                        value={settingsForm.closingTime}
-                        onChange={(event) => setSettingsForm((current) => ({ ...current, closingTime: event.target.value }))}
-                        className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white placeholder:text-slate-500"
-                      />
-                    </label>
-                    <label className="space-y-1 text-xs text-slate-300">
+                      <select
+                        value={categoryIcon}
+                        onChange={(event) => setCategoryIcon(event.target.value)}
+                        className="rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white focus:border-orange-400 focus:outline-none"
+                      >
+                        <option value="Wheat">Wheat</option>
+                        <option value="Droplets">Oil</option>
+                        <option value="Flame">Spices</option>
+                        <option value="Cookie">Snacks</option>
+                        <option value="Sparkles">Care</option>
+                        <option value="Lamp">Pooja</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={saveCategoryDraft}
+                        className="inline-flex min-h-10 items-center justify-center gap-1 rounded-lg bg-orange-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-orange-600"
+                      >
+                        <Plus size={15} />
+                        {editingCategoryId ? "Update" : "Add"}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {(settingsForm.categories.length ? settingsForm.categories : DEFAULT_CATEGORIES).map((category, index, categories) => (
+                        <div key={category.id} className="flex items-center gap-2 rounded-lg border border-[#34445f] bg-[#0c1322] p-2.5">
+                          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white">
+                            {category.name}
+                            <span className="ml-2 text-[10px] text-slate-500">{category.icon}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => moveCategory(category.id, -1)}
+                            disabled={index === 0}
+                            aria-label={`Move ${category.name} up`}
+                            className="rounded-md p-1.5 text-slate-300 hover:bg-white/10 disabled:opacity-30"
+                          >
+                            <ArrowUp size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveCategory(category.id, 1)}
+                            disabled={index === categories.length - 1}
+                            aria-label={`Move ${category.name} down`}
+                            className="rounded-md p-1.5 text-slate-300 hover:bg-white/10 disabled:opacity-30"
+                          >
+                            <ArrowDown size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCategoryId(category.id);
+                              setCategoryName(category.name);
+                              setCategoryIcon(category.icon);
+                            }}
+                            aria-label={`Edit ${category.name}`}
+                            className="rounded-md p-1.5 text-amber-300 hover:bg-amber-500/10"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteCategory(category)}
+                            aria-label={`Delete ${category.name}`}
+                            className="rounded-md p-1.5 text-rose-300 hover:bg-rose-500/10"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  {/* Dedicated Save button */}
+                  <button
+                    type="submit"
+                    disabled={isSavingSettings}
+                    className="interactive-lift min-h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-black text-white transition-all duration-200 hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isSavingSettings ? "Saving settings..." : "Save Store Settings"}
+                  </button>
+                </form>
+              )}
+
+              {/* 4. PAYMENTS & CHECKOUT SUBVIEW */}
+              {settingsView === 'payments' && (
+                <form onSubmit={handleSaveSettings} className="space-y-4">
+                  <section className="glass-panel space-y-4 p-4 sm:p-5">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">UPI & Payment Settings</h4>
+                      <p className="mt-1 text-xs text-slate-400">Configure your store UPI ID, recipient name, and custom QR code for customer payments.</p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="space-y-1.5 text-xs font-semibold text-slate-300">
+                        UPI ID
+                        <input
+                          value={settingsForm.upiId}
+                          onChange={(event) => setSettingsForm((current) => ({ ...current, upiId: event.target.value }))}
+                          placeholder="store@upi"
+                          className="w-full rounded-xl border border-[#34445f] bg-[#0c1322] p-2.5 text-sm text-white focus:border-orange-400 focus:outline-none"
+                        />
+                      </label>
+                      <label className="space-y-1.5 text-xs font-semibold text-slate-300">
+                        UPI payee name
+                        <input
+                          value={settingsForm.upiName}
+                          onChange={(event) => setSettingsForm((current) => ({ ...current, upiName: event.target.value }))}
+                          placeholder="Store Owner / Business Name"
+                          className="w-full rounded-xl border border-[#34445f] bg-[#0c1322] p-2.5 text-sm text-white focus:border-orange-400 focus:outline-none"
+                        />
+                      </label>
+                    </div>
+
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
                       Minimum delivery ₹
                       <input
                         type="number"
                         min="0"
                         value={settingsForm.minimumDeliveryOrder}
                         onChange={(event) => setSettingsForm((current) => ({ ...current, minimumDeliveryOrder: Number(event.target.value) }))}
-                        className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white"
+                        className="w-full rounded-xl border border-[#34445f] bg-[#0c1322] p-2.5 text-sm text-white focus:border-orange-400 focus:outline-none"
                       />
                     </label>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1 text-xs text-slate-300">UPI ID<input value={settingsForm.upiId} onChange={(event) => setSettingsForm((current) => ({ ...current, upiId: event.target.value }))} placeholder="store@upi" className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white" /></label><label className="space-y-1 text-xs text-slate-300">UPI payee name<input value={settingsForm.upiName} onChange={(event) => setSettingsForm((current) => ({ ...current, upiName: event.target.value }))} className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white" /></label><label className="space-y-1 text-xs text-slate-300 sm:col-span-2">UPI QR image URL (optional)<input type="url" value={settingsForm.upiQrUrl} onChange={(event) => setSettingsForm((current) => ({ ...current, upiQrUrl: event.target.value }))} placeholder="Leave blank to generate a payment QR from the UPI ID" className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2 text-white" /></label></div>
-                </section>
-                <button
-                  type="submit"
-                  disabled={isSavingSettings}
-                  className="interactive-lift min-h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-black text-white transition-all duration-200 hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {isSavingSettings ? "Saving settings..." : "Save Store Settings"}
-                </button>
-              </form>
 
-              <section className="glass-panel interactive-lift space-y-3 p-4 sm:p-5">
-                <div>
-                  <h3 className="font-bold text-white">Data Backup</h3>
-                  <p className="mt-1 text-xs text-slate-400">Export or restore store products, banners, and settings.</p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                    {/* UPI QR Code Management with Preview & File Upload */}
+                    <div className="rounded-2xl border border-[#34445f] bg-[#111c32] p-4 space-y-3">
+                      <span className="text-xs font-bold text-slate-200 block">UPI QR Code Image</span>
+                      <div className="flex flex-col sm:flex-row items-center gap-4">
+                        <div className="w-24 h-24 rounded-xl border-2 border-dashed border-[#34445f] bg-black/40 flex items-center justify-center overflow-hidden shrink-0">
+                          {settingsForm.upiQrUrl ? (
+                            <img src={settingsForm.upiQrUrl} alt="UPI QR Preview" className="w-full h-full object-contain" />
+                          ) : (
+                            <CreditCard size={28} className="text-slate-500" />
+                          )}
+                        </div>
+                        <div className="flex-1 w-full space-y-2">
+                          <input
+                            type="url"
+                            value={settingsForm.upiQrUrl.startsWith("data:") ? "" : settingsForm.upiQrUrl}
+                            onChange={(event) => setSettingsForm((current) => ({ ...current, upiQrUrl: event.target.value }))}
+                            placeholder="Leave blank to generate a dynamic QR from UPI ID"
+                            className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition">
+                              <ImagePlus size={15} className="text-orange-400" />
+                              {settingsForm.upiQrUrl ? "Change QR Image" : "Upload QR Image"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = "";
+                                  if (file) {
+                                    openCropperForFile(file, {
+                                      type: "upiQr",
+                                      aspectRatio: 1,
+                                      outputWidth: 400,
+                                      outputHeight: 400,
+                                      title: "Adjust UPI QR (1:1)",
+                                    });
+                                  }
+                                }}
+                                className="sr-only"
+                              />
+                            </label>
+                            {settingsForm.upiQrUrl && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openCropperForUrl(settingsForm.upiQrUrl, {
+                                    type: "upiQr",
+                                    aspectRatio: 1,
+                                    outputWidth: 400,
+                                    outputHeight: 400,
+                                    title: "Adjust UPI QR (1:1)",
+                                  })
+                                }
+                                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition"
+                              >
+                                <Pencil size={13} className="text-orange-400" />
+                                Adjust & Crop
+                              </button>
+                            )}
+                            {settingsForm.upiQrUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setSettingsForm((current) => ({ ...current, upiQrUrl: "" }))}
+                                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/20 transition"
+                              >
+                                Remove Custom QR
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Dedicated Save button */}
                   <button
-                    type="button"
-                    onClick={handleExportBackup}
-                    className="min-h-11 rounded-xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm font-bold text-sky-200 transition-all duration-200 hover:bg-sky-500/20"
+                    type="submit"
+                    disabled={isSavingSettings}
+                    className="interactive-lift min-h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-black text-white transition-all duration-200 hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
                   >
-                    Export JSON Backup
+                    {isSavingSettings ? "Saving settings..." : "Save Store Settings"}
                   </button>
-                  <label className="flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-center text-sm font-bold text-emerald-200 transition-all duration-200 hover:bg-emerald-500/20">
-                    Restore from JSON
-                    <input type="file" accept="application/json,.json" onChange={handleRestoreBackup} className="sr-only" />
-                  </label>
+                </form>
+              )}
+
+              {/* 5. OFFERS & ANNOUNCEMENTS SUBVIEW */}
+              {settingsView === 'offers' && (
+                <form onSubmit={handleSaveSettings} className="space-y-4">
+                  {/* Sticky Notice Bar */}
+                  <section className="glass-panel space-y-3 p-4 sm:p-5">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Top Notice Banner</h4>
+                      <p className="mt-1 text-xs text-slate-400">Display an announcement marquee at the very top of your store page.</p>
+                    </div>
+                    <label className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-white/20 bg-slate-950/30 px-3 py-2 text-sm font-semibold text-slate-200">
+                      <span>Show sticky notice bar</span>
+                      <input
+                        type="checkbox"
+                        checked={settingsForm.noticeEnabled}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, noticeEnabled: event.target.checked }))}
+                        className="h-5 w-5 accent-orange-500"
+                      />
+                    </label>
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      Notice text
+                      <textarea
+                        rows={3}
+                        value={settingsForm.noticeText}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, noticeText: event.target.value }))}
+                        className="w-full resize-y rounded-xl border border-[#34445f] bg-[#152036] px-3 py-3 text-sm text-white focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20"
+                      />
+                    </label>
+                  </section>
+
+                  {/* First-Visit Promo Popup */}
+                  <section className="glass-panel space-y-3 p-4 sm:p-5">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">First-Visit Promo Offer Popup</h4>
+                      <p className="mt-1 text-xs text-slate-400">Show a promotional modal offer to customers on their first visit.</p>
+                    </div>
+
+                    <label className="flex items-center justify-between gap-3 text-sm font-bold text-white">
+                      Enable first-visit offer popup
+                      <input
+                        type="checkbox"
+                        checked={settingsForm.promoEnabled}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, promoEnabled: event.target.checked }))}
+                        className="h-5 w-5 accent-amber-500"
+                      />
+                    </label>
+
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      Offer headline
+                      <input
+                        value={settingsForm.promoTitle}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, promoTitle: event.target.value }))}
+                        placeholder="Special Festival Offer"
+                        className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2.5 text-sm text-white focus:border-orange-400 focus:outline-none"
+                      />
+                    </label>
+
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      Offer details
+                      <textarea
+                        rows={2}
+                        value={settingsForm.promoText}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, promoText: event.target.value }))}
+                        placeholder="Get 10% off on all winter spices and cold-pressed oils..."
+                        className="w-full rounded-lg border border-[#34445f] bg-[#0c1322] p-2.5 text-sm text-white focus:border-orange-400 focus:outline-none"
+                      />
+                    </label>
+
+                    {/* Promo Image with preview & crop */}
+                    <div className="rounded-2xl border border-[#34445f] bg-[#111c32] p-4 space-y-3">
+                      <span className="text-xs font-bold text-slate-200 block">Offer Banner Image</span>
+                      <div className="flex flex-col sm:flex-row items-center gap-4">
+                        <div className="w-28 h-16 rounded-xl border-2 border-dashed border-[#34445f] bg-black/40 flex items-center justify-center overflow-hidden shrink-0">
+                          {settingsForm.promoImageUrl ? (
+                            <img src={settingsForm.promoImageUrl} alt="Promo Banner Preview" className="w-full h-full object-cover" />
+                          ) : (
+                            <Megaphone size={24} className="text-slate-500" />
+                          )}
+                        </div>
+                        <div className="flex-1 w-full space-y-2">
+                          <input
+                            type="url"
+                            value={settingsForm.promoImageUrl.startsWith("data:") ? "" : settingsForm.promoImageUrl}
+                            onChange={(event) => setSettingsForm((current) => ({ ...current, promoImageUrl: event.target.value }))}
+                            placeholder="Offer image URL (optional)"
+                            className="w-full rounded-xl border border-[#34445f] bg-[#152036] px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-orange-400 focus:outline-none"
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition">
+                              <ImagePlus size={15} className="text-orange-400" />
+                              {settingsForm.promoImageUrl ? "Change Promo Image" : "Upload Promo Image"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = "";
+                                  if (file) {
+                                    openCropperForFile(file, {
+                                      type: "promo",
+                                      aspectRatio: 16 / 9,
+                                      outputWidth: 800,
+                                      outputHeight: 450,
+                                      title: "Adjust Offer Banner (16:9)",
+                                    });
+                                  }
+                                }}
+                                className="sr-only"
+                              />
+                            </label>
+                            {settingsForm.promoImageUrl && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openCropperForUrl(settingsForm.promoImageUrl, {
+                                    type: "promo",
+                                    aspectRatio: 16 / 9,
+                                    outputWidth: 800,
+                                    outputHeight: 450,
+                                    title: "Adjust Offer Banner (16:9)",
+                                  })
+                                }
+                                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] hover:bg-[#1f2d4a] px-3 py-2 text-xs font-bold text-slate-200 transition"
+                              >
+                                <Pencil size={13} className="text-orange-400" />
+                                Adjust & Crop
+                              </button>
+                            )}
+                            {settingsForm.promoImageUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setSettingsForm((current) => ({ ...current, promoImageUrl: "" }))}
+                                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/20 transition"
+                              >
+                                Remove Promo Image
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Dedicated Save button */}
+                  <button
+                    type="submit"
+                    disabled={isSavingSettings}
+                    className="interactive-lift min-h-11 w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-black text-white transition-all duration-200 hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isSavingSettings ? "Saving settings..." : "Save Store Settings"}
+                  </button>
+                </form>
+              )}
+
+              {/* 6. DATA & BACKUPS SUBVIEW */}
+              {settingsView === 'backup' && (
+                <div className="space-y-4">
+                  <section className="glass-panel space-y-4 p-4 sm:p-5">
+                    <div>
+                      <h3 className="font-bold text-white">Store Data & Backups</h3>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Export your complete store catalog (products, banners, categories, and settings) to a JSON file, or restore from a previous backup file.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={handleExportBackup}
+                        className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm font-bold text-sky-200 transition-all duration-200 hover:bg-sky-500/20 active:scale-[0.99]"
+                      >
+                        <FileDown size={18} className="text-sky-400" />
+                        Export JSON Backup
+                      </button>
+
+                      <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-center text-sm font-bold text-emerald-200 transition-all duration-200 hover:bg-emerald-500/20 active:scale-[0.99]">
+                        <FileUp size={18} className="text-emerald-400" />
+                        Restore from JSON
+                        <input type="file" accept="application/json,.json" onChange={handleRestoreBackup} className="sr-only" />
+                      </label>
+                    </div>
+
+                    <div className="rounded-xl border border-[#263653] bg-[#0c1322] p-3 text-xs text-slate-400">
+                      <strong className="text-slate-300">Safety Tip:</strong> Always export a fresh JSON backup before restoring or making large catalog updates.
+                    </div>
+                  </section>
                 </div>
-              </section>
+              )}
             </div>
           </section>
         </div>
@@ -1923,7 +2904,7 @@ export default function VisualAdminProtectedPage() {
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-orange-500/20 bg-[#0f172a] p-6 shadow-2xl">
             <div className="h-10 w-10 animate-spin rounded-full border-3 border-orange-500/20 border-t-orange-500" />
             <p className="text-xs font-bold text-slate-200">
-              {isSavingProduct ? "પ્રોડક્ટ સેવ થાય છે…" : isSavingBanner ? "બેનર સેવ થાય છે…" : isSavingSettings ? "સેટિંગ્સ સેવ થાય છે…" : "ફોટો પ્રોસેસ થાય છે…"}
+              {isSavingProduct ? "Saving product…" : isSavingBanner ? "Saving banner…" : isSavingSettings ? "Saving settings…" : "Processing image…"}
             </p>
           </div>
         </div>

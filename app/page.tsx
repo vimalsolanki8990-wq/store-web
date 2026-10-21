@@ -155,13 +155,13 @@ export default function CustomerStorePage() {
         if (!prodSnap.empty) {
           const list = prodSnap.docs.map((d) => {
             const raw = d.data();
-            let parsedUnits: string[] = ["1 નંગ"];
+            let parsedUnits: string[] = ["1 pc"];
             if (Array.isArray(raw.units)) parsedUnits = raw.units;
             else if (typeof raw.unit === "string") parsedUnits = [raw.unit];
 
             return {
               id: d.id,
-              nameGu: raw.nameGu || raw.name_gu || "કરિયાણું આઇટમ",
+              nameGu: raw.nameGu || raw.name_gu || "Grocery Item",
               nameEn: raw.nameEn || raw.name_en || "",
               category: raw.category || "કઠોળ-અનાજ",
               units: parsedUnits,
@@ -436,7 +436,7 @@ export default function CustomerStorePage() {
     const handleAppInstalled = () => {
       setInstallPrompt(null);
       setInstallPromptVisible(false);
-      showToast("જય વછરાજ એપ સફળતાપૂર્વક ઇન્સ્ટોલ થઈ ગઈ!");
+      showToast("App installed successfully!");
     };
 
     window.addEventListener("appinstalled", handleAppInstalled);
@@ -560,23 +560,23 @@ export default function CustomerStorePage() {
     ctx.fillStyle = "#111827";
     ctx.font = "bold 26px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("જય વછરાજ જનરલ સ્ટોર", width / 2, 50);
+    ctx.fillText(storeSettings.storeName || "JAY VACHHRAJ GENERAL STORE", width / 2, 50);
 
     ctx.font = "16px sans-serif";
     ctx.fillStyle = "#4b5563";
-    ctx.fillText("ઝાંઝમેર", width / 2, 78);
-    ctx.fillText("સંપર્ક: +91 9638009880", width / 2, 102);
+    ctx.fillText(storeSettings.address || "ZANZMER", width / 2, 78);
+    ctx.fillText("Contact: +91 9638009880", width / 2, 102);
 
     const dateStr = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
     ctx.font = "14px monospace";
-    ctx.fillText(`તારીખ: ${dateStr}`, width / 2, 128);
+    ctx.fillText(`Date: ${dateStr}`, width / 2, 128);
 
     // Customer Details Box
     ctx.textAlign = "left";
     ctx.fillStyle = "#374151";
     ctx.font = "15px sans-serif";
-    ctx.fillText(`ગ્રાહક: ${custName || "ગ્રાહક"}`, 40, 165);
-    ctx.fillText(`મોબાઇલ: ${custPhone || "-"}`, 40, 188);
+    ctx.fillText(`Customer: ${custName || "Customer"}`, 40, 165);
+    ctx.fillText(`Mobile: ${custPhone || "-"}`, 40, 188);
 
     // Divider Line
     ctx.strokeStyle = "#e5e7eb";
@@ -589,9 +589,9 @@ export default function CustomerStorePage() {
     // Table Headers
     ctx.font = "bold 15px sans-serif";
     ctx.fillStyle = "#1f2937";
-    ctx.fillText("આઇટમ (ITEM)", 40, 230);
+    ctx.fillText("ITEM", 40, 230);
     ctx.textAlign = "right";
-    ctx.fillText("રકમ (₹)", width - 40, 230);
+    ctx.fillText("AMOUNT (₹)", width - 40, 230);
 
     // Items List
     let y = 265;
@@ -628,7 +628,7 @@ export default function CustomerStorePage() {
     ctx.font = "bold 20px sans-serif";
     ctx.textAlign = "left";
     ctx.fillStyle = "#111827";
-    ctx.fillText("કુલ રકમ (Total):", 40, y);
+    ctx.fillText("Total Amount:", 40, y);
     ctx.textAlign = "right";
     ctx.fillStyle = "#ea580c";
     ctx.fillText(`₹${cartTotal.toFixed(2)}`, width - 40, y);
@@ -638,7 +638,7 @@ export default function CustomerStorePage() {
     ctx.textAlign = "center";
     ctx.font = "bold 16px sans-serif";
     ctx.fillStyle = "#374151";
-    ctx.fillText("પધારવા બદલ આભાર!", width / 2, y);
+    ctx.fillText("Thank you for shopping with us!", width / 2, y);
 
     return canvas;
   };
@@ -736,7 +736,7 @@ export default function CustomerStorePage() {
             title: "Jay Vachhraj General Store - Bill",
           });
         } catch (err) {
-          if (err.name === "AbortError") return; // user closed share sheet
+          if (err instanceof Error && err.name === "AbortError") return; // user closed share sheet
         }
       } else {
         // Fallback: download the image
@@ -1361,7 +1361,7 @@ export default function CustomerStorePage() {
           <section role="dialog" aria-modal="true" aria-labelledby="receipt-title" className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
             <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3.5 bg-slate-50">
               <h2 id="receipt-title" className="font-black text-sm text-slate-900">
-                બિલ પ્રીવ્યૂ (Bill Receipt)
+                Bill Receipt Preview
               </h2>
               <button onClick={() => setReceiptOpen(false)} aria-label="Close receipt preview" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 transition">
                 <X size={18} />
@@ -1382,16 +1382,16 @@ export default function CustomerStorePage() {
                 {/* Header */}
                 <div className="text-center space-y-1">
                   <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
-                    જય વછરાજ જનરલ સ્ટોર
+                    {storeSettings.storeName || "Jay Vachhraj General Store"}
                   </h3>
                   <p className="text-xs font-semibold text-slate-700">
-                    ઝાંઝમેર
+                    {storeSettings.address || "Zanzmer"}
                   </p>
                   <p className="text-[11px] font-medium text-slate-600">
-                    સંપર્ક: +{storeSettings.whatsappNumber ? storeSettings.whatsappNumber.replace(/\D/g, "") : "919638009880"}
+                    Contact: +{storeSettings.whatsappNumber ? storeSettings.whatsappNumber.replace(/\D/g, "") : "919638009880"}
                   </p>
                   <p className="text-[10px] text-slate-500 pt-0.5">
-                    તારીખ & સમય: {receiptTimestamp || `${new Date().toLocaleDateString("en-IN")} · ${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}`}
+                    Date & Time: {receiptTimestamp || `${new Date().toLocaleDateString("en-IN")} · ${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}`}
                   </p>
                 </div>
 
@@ -1402,19 +1402,19 @@ export default function CustomerStorePage() {
                     <div className="text-[11px] space-y-0.5">
                       {custName.trim() && (
                         <div className="flex justify-between">
-                          <span className="text-slate-500">ગ્રાહક:</span>
+                          <span className="text-slate-500">Customer:</span>
                           <span className="font-bold text-slate-800">{custName.trim()}</span>
                         </div>
                       )}
                       {custPhone.trim() && (
                         <div className="flex justify-between">
-                          <span className="text-slate-500">મોબાઇલ:</span>
+                          <span className="text-slate-500">Mobile:</span>
                           <span className="font-bold text-slate-800">{custPhone.replace(/\D/g, "")}</span>
                         </div>
                       )}
                       {custAddress.trim() && (
                         <div className="flex justify-between">
-                          <span className="text-slate-500">ગામ / વિસ્તાર:</span>
+                          <span className="text-slate-500">Address / Village:</span>
                           <span className="font-semibold text-slate-800 truncate max-w-[180px]">{custAddress.trim()}</span>
                         </div>
                       )}
@@ -1428,9 +1428,9 @@ export default function CustomerStorePage() {
                 {/* Items Table */}
                 <div className="w-full">
                   <div className="grid grid-cols-[1.5rem_1fr_auto] gap-2 pb-1.5 font-bold border-b border-dashed border-slate-400 text-[11px] uppercase text-slate-800">
-                    <span>નં.</span>
-                    <span>આઇટમ (Item)</span>
-                    <span className="text-right">રકમ (₹)</span>
+                    <span>No.</span>
+                    <span>Item</span>
+                    <span className="text-right">Amount (₹)</span>
                   </div>
 
                   <div className="divide-y divide-dashed divide-slate-200 py-1">
@@ -1464,19 +1464,19 @@ export default function CustomerStorePage() {
 
                 {cartDiscount > 0 && (
                   <div className="flex justify-between text-emerald-700 font-semibold text-[11px] py-0.5">
-                    <span>બચત (Discount):</span>
+                    <span>Discount:</span>
                     <span>−₹{cartDiscount.toFixed(2)}</span>
                   </div>
                 )}
 
-                {/* Total Amount (કુલ રકમ) in Bold */}
+                {/* Total Amount in Bold */}
                 <div className="flex justify-between items-center text-sm sm:text-base font-black text-slate-950 py-1.5 border-t border-b border-slate-900 my-1">
-                  <span>કુલ રકમ (Total Amount):</span>
+                  <span>Total Amount:</span>
                   <span className="text-base sm:text-lg">₹{cartTotal.toFixed(2)}</span>
                 </div>
 
                 <div className="text-[10px] text-slate-500 text-right mt-1">
-                  કુલ આઇટમ: {totalCartCount} નંગ
+                  Total Items: {totalCartCount} items
                 </div>
 
                 {/* Divider Line */}
@@ -1535,7 +1535,7 @@ export default function CustomerStorePage() {
                   </span>
 
                   <p className="text-center text-xs font-semibold text-gray-700 mt-3">
-                    પધારવા બદલ આભાર!
+                    Thank you for shopping with us!
                   </p>
                 </div>
               </article>
@@ -1632,7 +1632,7 @@ export default function CustomerStorePage() {
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="text-xl shrink-0" aria-hidden="true">📲</span>
             <span className="text-xs sm:text-sm font-black text-slate-900 truncate">
-              જય વછરાજ એપ ઇન્સ્ટોલ કરો
+              Install Store App
             </span>
           </div>
 
@@ -1841,7 +1841,7 @@ export default function CustomerStorePage() {
               <div className="w-12 h-12 rounded-full border-4 border-orange-100 border-t-orange-500 animate-spin" />
             </div>
             <p className="font-bold text-sm text-slate-900">
-              {isPreparingReceipt ? "ઓર્ડર અને બિલ તૈયાર થઈ રહ્યું છે…" : "બિલ શેર થઈ રહ્યું છે…"}
+              {isPreparingReceipt ? "Preparing order & bill receipt…" : "Sharing receipt…"}
             </p>
             <p className="text-xs text-slate-500">
               {isPreparingReceipt ? "Preparing your clean bill slip..." : "Sharing your receipt image..."}

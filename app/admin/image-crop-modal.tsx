@@ -222,7 +222,7 @@ export function ImageCropModal({
             <div>
               <h3 className="text-sm font-black text-white">{title}</h3>
               <p className="text-[10px] text-slate-400">
-                {isWidescreen ? "16:9 બેનર કન્ટેનર રેશિયો" : "1:1 ચોરસ કન્ટેનર રેશિયો"} · ડ્રેગ કરીને સ્થાન બદલો
+                {isWidescreen ? "16:9 Banner container ratio" : "1:1 Square container ratio"} · Drag to reposition
               </p>
             </div>
           </div>
@@ -291,7 +291,7 @@ export function ImageCropModal({
 
           <p className="mt-2.5 text-[11px] text-slate-400 flex items-center gap-1.5">
             <Move size={12} className="text-orange-400" />
-            ફોટો ઉપર માઉસ અથવા આંગળીથી ડ્રેગ કરીને મનપસંદ સ્થાન ગોઠવો
+            Drag photo with mouse or finger to adjust position
           </p>
         </div>
 
@@ -301,7 +301,7 @@ export function ImageCropModal({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs font-bold text-slate-200">
               <span className="flex items-center gap-1.5 text-amber-300">
-                <ZoomIn size={14} /> ઝૂમ એડજસ્ટ (Zoom Level)
+                <ZoomIn size={14} /> Zoom Level
               </span>
               <span className="font-mono text-xs rounded-md bg-[#1a2942] px-2 py-0.5 text-orange-300">
                 {zoom.toFixed(2)}x
@@ -343,7 +343,7 @@ export function ImageCropModal({
               onClick={handleReset}
               className="inline-flex items-center gap-1.5 rounded-xl border border-[#34445f] bg-[#152036] px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white hover:bg-[#1a2942] transition"
             >
-              <RotateCcw size={12} /> કેન્દ્રમાં લાવો (Reset Center)
+              <RotateCcw size={12} /> Reset Center
             </button>
             <span className="text-[10px] text-slate-500 font-mono">
               X: {Math.round(panX)}px · Y: {Math.round(panY)}px
@@ -357,7 +357,7 @@ export function ImageCropModal({
               onClick={onClose}
               className="min-h-11 flex-1 rounded-xl border border-[#34445f] bg-[#152036] px-4 py-2 text-xs sm:text-sm font-bold text-slate-300 hover:text-white hover:bg-[#1a2942] transition"
             >
-              રદ કરો (Cancel)
+              Cancel
             </button>
             <button
               type="button"
@@ -365,7 +365,7 @@ export function ImageCropModal({
               disabled={isProcessing}
               className="min-h-11 flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 px-4 py-2 text-xs sm:text-sm font-black text-white shadow-lg shadow-orange-950/40 transition active:scale-95 flex items-center justify-center gap-1.5"
             >
-              <Check size={16} /> ફોટો સેવ કરો (Confirm Crop)
+              <Check size={16} /> Confirm Crop
             </button>
           </div>
         </div>
