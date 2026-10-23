@@ -2548,7 +2548,7 @@ export default function VisualAdminProtectedPage() {
                       </p>
                     </div>
 
-                    <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto]">
+                    <div className="grid gap-2 sm:grid-cols-[1fr_13rem_auto]">
                       <input
                         value={categoryName}
                         onChange={(event) => setCategoryName(event.target.value)}
@@ -2560,12 +2560,26 @@ export default function VisualAdminProtectedPage() {
                         onChange={(event) => setCategoryIcon(event.target.value)}
                         className="rounded-lg border border-[#34445f] bg-[#0c1322] px-3 py-2 text-sm text-white focus:border-orange-400 focus:outline-none"
                       >
-                        <option value="Wheat">Wheat</option>
-                        <option value="Droplets">Oil</option>
-                        <option value="Flame">Spices</option>
-                        <option value="Cookie">Snacks</option>
-                        <option value="Sparkles">Care</option>
-                        <option value="Lamp">Pooja</option>
+                        <option value="Wheat">🌾 Wheat (Grains)</option>
+                        <option value="Droplets">💧 Droplets (Oil/Liquid)</option>
+                        <option value="Flame">🔥 Flame (Spices)</option>
+                        <option value="Cookie">🍪 Cookie (Snacks)</option>
+                        <option value="Sparkles">✨ Sparkles (Personal Care)</option>
+                        <option value="Lamp">🪔 Lamp (Pooja)</option>
+                        <option value="Milk">🥛 Milk (Dairy)</option>
+                        <option value="Apple">🍎 Apple (Fruits)</option>
+                        <option value="Carrot">🥕 Carrot (Vegetables)</option>
+                        <option value="Egg">🥚 Egg (Poultry/Eggs)</option>
+                        <option value="Coffee">☕ Coffee (Beverages)</option>
+                        <option value="SprayCan">🧴 Spray (Cleaning/Hygiene)</option>
+                        <option value="Baby">👶 Baby (Baby Care)</option>
+                        <option value="Croissant">🥐 Croissant (Bakery)</option>
+                        <option value="Candy">🍬 Candy (Sweets)</option>
+                        <option value="Beef">🥩 Beef/Meat (Meat)</option>
+                        <option value="CupSoda">🥤 CupSoda (Cold Drinks)</option>
+                        <option value="Pill">💊 Pill (Health/Medicine)</option>
+                        <option value="Shirt">👕 Shirt (Clothing)</option>
+                        <option value="Box">📦 Box (Other/Misc)</option>
                       </select>
                       <button
                         type="button"

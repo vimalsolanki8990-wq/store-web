@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { db } from "./firebase";
 import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import html2canvas from "html2canvas";
-import { Camera, Check, CheckCircle2, Clock, Copy, ExternalLink, FileDown, FolderOpen, Heart, Home, Loader2, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Store, Tag, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
+import { Camera, Check, CheckCircle2, Clock, Copy, ExternalLink, FileDown, FolderOpen, Heart, Home, Loader2, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Store, Tag, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal, Milk, Apple, Carrot, Egg, Coffee, SprayCan, Baby, Croissant, Candy, Beef, CupSoda, Pill, Shirt, Box } from "lucide-react";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, format12Hour, parseTimeToMinutes, StoreCategory, StoreSettings } from "./store-config";
 import AdminStealthAuthModal from "./components/AdminStealthAuthModal";
 import { matchesGroceryQuery } from "./lib/searchUtils";
@@ -62,7 +62,31 @@ interface SpeechRecognitionInstance {
   stop: () => void;
 }
 
-const CATEGORY_ICONS: Record<string, typeof Wheat> = { Wheat, Droplets, Flame, Cookie, Lamp, Sparkles, Store, ExternalLink, MapPin };
+const CATEGORY_ICONS: Record<string, typeof Wheat> = {
+  Wheat,
+  Droplets,
+  Flame,
+  Cookie,
+  Lamp,
+  Sparkles,
+  Store,
+  ExternalLink,
+  MapPin,
+  Milk,
+  Apple,
+  Carrot,
+  Egg,
+  Coffee,
+  SprayCan,
+  Baby,
+  Croissant,
+  Candy,
+  Beef,
+  CupSoda,
+  Pill,
+  Shirt,
+  Box,
+};
 
 export default function CustomerStorePage() {
   const router = useRouter();
