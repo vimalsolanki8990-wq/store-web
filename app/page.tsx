@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { db } from "./firebase";
 import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import html2canvas from "html2canvas";
-import { Camera, Check, CheckCircle2, Clock, Copy, ExternalLink, FileDown, FolderOpen, Heart, Home, Loader2, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Store, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
+import { Camera, Check, CheckCircle2, Clock, Copy, ExternalLink, FileDown, FolderOpen, Heart, Home, Loader2, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Store, Tag, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal } from "lucide-react";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, format12Hour, parseTimeToMinutes, StoreCategory, StoreSettings } from "./store-config";
 import AdminStealthAuthModal from "./components/AdminStealthAuthModal";
 import { matchesGroceryQuery } from "./lib/searchUtils";
@@ -1122,43 +1122,53 @@ export default function CustomerStorePage() {
                 type="button"
                 onClick={() => setSaleOnly((v) => !v)}
                 aria-pressed={saleOnly}
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border transition shrink-0 ${
-                  saleOnly ? "border-orange-500 bg-orange-50 text-orange-700 shadow-2xs" : "border-stone-200 bg-[#fbf9f5] text-slate-600 hover:bg-stone-100"
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-bold border transition shrink-0 ${
+                  saleOnly
+                    ? "border-orange-500 bg-orange-500 text-white shadow-xs"
+                    : "border-amber-300 bg-amber-50/90 text-amber-900 hover:bg-amber-100 shadow-2xs"
                 }`}
               >
-                Special Offers {saleOnly && <Check size={12} />}
+                <Tag size={13} className={saleOnly ? "text-white" : "text-orange-600"} /> Special Offers {saleOnly && <Check size={12} />}
               </button>
               <button
                 type="button"
                 onClick={() => setFavoritesOnly((v) => !v)}
                 aria-pressed={favoritesOnly}
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border transition shrink-0 ${
-                  favoritesOnly ? "border-rose-500 bg-rose-50 text-rose-700 shadow-2xs" : "border-stone-200 bg-[#fbf9f5] text-slate-600 hover:bg-stone-100"
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-bold border transition shrink-0 ${
+                  favoritesOnly
+                    ? "border-rose-500 bg-rose-500 text-white shadow-xs"
+                    : "border-rose-200 bg-rose-50/70 text-rose-800 hover:bg-rose-100/80 shadow-2xs"
                 }`}
               >
-                <Heart size={12} fill={favoritesOnly ? "currentColor" : "none"} /> Favorites
+                <Heart size={13} fill={favoritesOnly ? "currentColor" : "none"} className={favoritesOnly ? "text-white" : "text-rose-500"} /> Favorites
               </button>
               {brands.length > 0 && (
-                <select
-                  aria-label="Filter by brand"
-                  value={brandFilter}
-                  onChange={(e) => setBrandFilter(e.target.value)}
-                  className="rounded-full border border-stone-200 bg-[#fbf9f5] px-3 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0"
-                >
-                  <option value="all">All Brands</option>
-                  {brands.map((b) => <option key={b} value={b}>{b}</option>)}
-                </select>
+                <div className="relative inline-flex items-center shrink-0">
+                  <SlidersHorizontal size={13} className="absolute left-2.5 pointer-events-none text-slate-500" />
+                  <select
+                    aria-label="Filter by brand"
+                    value={brandFilter}
+                    onChange={(e) => setBrandFilter(e.target.value)}
+                    className="rounded-full border border-stone-200 bg-[#fbf9f5] pl-7 pr-3 py-1.5 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0 cursor-pointer shadow-2xs hover:bg-stone-100 transition"
+                  >
+                    <option value="all">All Brands</option>
+                    {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
               )}
-              <select
-                aria-label="Sort by price"
-                value={sortPrice}
-                onChange={(e) => setSortPrice(e.target.value)}
-                className="rounded-full border border-stone-200 bg-[#fbf9f5] px-3 py-1 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0"
-              >
-                <option value="featured">Featured Order</option>
-                <option value="low">Price: Low to High</option>
-                <option value="high">Price: High to Low</option>
-              </select>
+              <div className="relative inline-flex items-center shrink-0">
+                <SlidersHorizontal size={13} className="absolute left-2.5 pointer-events-none text-slate-500" />
+                <select
+                  aria-label="Sort by price"
+                  value={sortPrice}
+                  onChange={(e) => setSortPrice(e.target.value)}
+                  className="rounded-full border border-stone-200 bg-[#fbf9f5] pl-7 pr-3 py-1.5 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0 cursor-pointer shadow-2xs hover:bg-stone-100 transition"
+                >
+                  <option value="featured">Featured Order</option>
+                  <option value="low">Price: Low to High</option>
+                  <option value="high">Price: High to Low</option>
+                </select>
+              </div>
             </div>
           </div>
         </header>
@@ -1279,11 +1289,11 @@ export default function CustomerStorePage() {
                 Deal of the Day
               </span>
             </div>
-            <h2 className="text-lg sm:text-2xl font-black text-slate-900 leading-snug">
-              100% Pure Groundnut Oil & Seasonal Spices
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 leading-snug">
+              ઘરે બેઠા ઓર્ડર કરો, ફ્રી ડિલિવરી મેળવો
             </h2>
-            <p className="text-xs sm:text-sm text-slate-700 mt-1.5 line-clamp-2 leading-relaxed">
-              Freshly pressed pure groundnut oil and seasonal spices direct from Zanzmer farmers at wholesale quality rates.
+            <p className="text-sm sm:text-base text-slate-700 mt-1.5 line-clamp-2 leading-relaxed">
+              Zanzmer અને આસપાસના વિસ્તારોમાં તાજા કરિયાણાની ઝડપી ડિલિવરી. અત્યારે જ ઓર્ડર કરો!
             </p>
             <div className="mt-4 flex items-center gap-3">
               <button
@@ -1888,6 +1898,7 @@ export default function CustomerStorePage() {
           </div>
         </aside>
       )}
+
       <nav
         aria-label="Bottom Navigation Dock"
         className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md glass-dock rounded-2xl px-3 py-2 shadow-lg border border-orange-100/70"
@@ -2082,6 +2093,17 @@ export default function CustomerStorePage() {
           </div>
         </div>
       )}
+
+      {/* Floating WhatsApp Action Button */}
+      <a
+        href={`https://wa.me/${storeSettings.whatsappNumber.replace(/\D/g, "")}`}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Chat on WhatsApp"
+        className="fixed bottom-28 right-4 z-[9999] bg-[#25D366] text-white p-3.5 rounded-full shadow-2xl flex items-center justify-center cursor-pointer hover:bg-[#20ba59] transition-transform hover:scale-110"
+      >
+        <MessageCircle size={24} />
+      </a>
     </div>
   );
 }
