@@ -1290,10 +1290,10 @@ export default function CustomerStorePage() {
               </span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 leading-snug">
-              ઘરે બેઠા ઓર્ડર કરો, ફ્રી ડિલિવરી મેળવો
+              {storeSettings.heroTitle}
             </h2>
             <p className="text-sm sm:text-base text-slate-700 mt-1.5 line-clamp-2 leading-relaxed">
-              Zanzmer અને આસપાસના વિસ્તારોમાં તાજા કરિયાણાની ઝડપી ડિલિવરી. અત્યારે જ ઓર્ડર કરો!
+              {storeSettings.heroSubtitle}
             </p>
             <div className="mt-4 flex items-center gap-3">
               <button

@@ -2768,6 +2768,36 @@ export default function VisualAdminProtectedPage() {
               {/* 5. OFFERS & ANNOUNCEMENTS SUBVIEW */}
               {settingsView === 'offers' && (
                 <form onSubmit={handleSaveSettings} className="space-y-4">
+                  {/* Hero Banner Text */}
+                  <section className="glass-panel space-y-3 p-4 sm:p-5">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Hero Banner Text</h4>
+                      <p className="mt-1 text-xs text-slate-400">Main headline and subtitle shown on the storefront hero banner.</p>
+                    </div>
+
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      Hero Title
+                      <input
+                        type="text"
+                        value={settingsForm.heroTitle || ""}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, heroTitle: event.target.value }))}
+                        placeholder="ઘરે બેઠા ઓર્ડર કરો, ફ્રી ડિલિવરી મેળવો"
+                        className="w-full rounded-xl border border-[#34445f] bg-[#0c1322] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                      />
+                    </label>
+
+                    <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                      Hero Subtitle
+                      <textarea
+                        rows={2}
+                        value={settingsForm.heroSubtitle || ""}
+                        onChange={(event) => setSettingsForm((current) => ({ ...current, heroSubtitle: event.target.value }))}
+                        placeholder="Zanzmer અને આસપાસના વિસ્તારોમાં તાજા કરિયાણાની ઝડપી ડિલિવરી. અત્યારે જ ઓર્ડર કરો!"
+                        className="w-full resize-y rounded-xl border border-[#34445f] bg-[#0c1322] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                      />
+                    </label>
+                  </section>
+
                   {/* Sticky Notice Bar */}
                   <section className="glass-panel space-y-3 p-4 sm:p-5">
                     <div>

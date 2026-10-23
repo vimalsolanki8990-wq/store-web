@@ -61,6 +61,8 @@ export interface StoreSettings {
   promoText: string;
   promoImageUrl: string;
   showInstallBanner: boolean;
+  heroTitle: string;
+  heroSubtitle: string;
 }
 
 export const DEFAULT_CATEGORIES: StoreCategory[] = [
@@ -153,6 +155,8 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   promoText: "",
   promoImageUrl: "",
   showInstallBanner: true,
+  heroTitle: "ઘરે બેઠા ઓર્ડર કરો, ફ્રી ડિલિવરી મેળવો",
+  heroSubtitle: "Zanzmer અને આસપાસના વિસ્તારોમાં તાજા કરિયાણાની ઝડપી ડિલિવરી. અત્યારે જ ઓર્ડર કરો!",
 };
 
 export const THEME_PRESETS: Record<string, ThemePreset> = {
@@ -351,5 +355,7 @@ export function normalizeStoreSettings(data: Record<string, unknown> = {}): Stor
     promoText: String(data.promoText ?? ""),
     promoImageUrl: String(data.promoImageUrl ?? ""),
     showInstallBanner: data.showInstallBanner !== false,
+    heroTitle: String(data.heroTitle ?? DEFAULT_STORE_SETTINGS.heroTitle),
+    heroSubtitle: String(data.heroSubtitle ?? DEFAULT_STORE_SETTINGS.heroSubtitle),
   };
 }
