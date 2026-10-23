@@ -9,7 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.3",
     "firebase": "^13.0.0",
     "html2canvas": "^1.4.1",
     "lucide-react": "^1.59.0",

@@ -279,7 +279,7 @@ export default function CustomerStorePage() {
               brand: String(raw.brand ?? "Other"),
               stockCount: Math.max(0, Number(raw.stockCount ?? raw.stock ?? ((raw.inStock ?? raw.in_stock) === false ? 0 : 999999))),
               originalPrice: Number(raw.originalPrice ?? raw.compareAtPrice ?? raw.price) || 0,
-              offer: raw.offer === true || Number(raw.originalPrice ?? raw.compareAtPrice ?? 0) > Number(raw.price ?? 0),
+              offer: raw.offer === true || raw.isSpecialOffer === true || Number(raw.originalPrice ?? raw.compareAtPrice ?? 0) > Number(raw.price ?? 0),
             } as Product;
           });
           setProducts(list);

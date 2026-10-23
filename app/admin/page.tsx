@@ -4,10 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { db, auth, googleProvider } from "../firebase";
 import { isAdminEmail } from "../admin-config";
-import { isValidAdminSession, clearAdminSession, getAdminSession, setGoogleAdminSession, getRemainingSessionSeconds, ADMIN_PHONE } from "../admin-session";
+import { isValidAdminSession, clearAdminSession, getAdminSession, setGoogleAdminSession, getRemainingSessionSeconds, formatSessionRemaining, ADMIN_PHONE } from "../admin-session";
 import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, CircleCheck, CircleX, ClipboardList, Clock, Copy, CreditCard, Database, ExternalLink, FileDown, FileUp, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, LockKeyhole, MapPin, Megaphone, MessageCircle, Pencil, Plus, Printer, Save, Search, Settings, ShieldAlert, ShieldCheck, ShoppingBasket, Store, Tag, Trash2, X } from "lucide-react";
 import { ImageCropModal } from "./image-crop-modal";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, format12Hour, normalizeStoreSettings, sanitizeWhatsAppNumber, StoreCategory, StoreSettings } from "../store-config";
+import { exportProductsToCsvString, prepareImportProducts } from "../lib/csvProductUtils";
 import {
   signInWithPopup,
   signOut,
@@ -38,6 +39,8 @@ interface Product {
   stockCount: number;
   originalPrice: number;
   offer: boolean;
+  packing?: string;
+  isSpecialOffer?: boolean;
 }
 
 interface Banner {
@@ -85,7 +88,7 @@ export default function VisualAdminProtectedPage() {
     setSessionVerified(true);
   }, [router]);
 
-  // 2. Strict 5-Minute Hard Session Expiry Real-Time Monitor
+  // 2. Strict 24-Hour Hard Session Expiry Real-Time Monitor
   const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<number>(() => {
     return getRemainingSessionSeconds();
   });
@@ -343,7 +346,9 @@ export default function VisualAdminProtectedPage() {
             brand: String(raw.brand ?? "Other"),
             stockCount: Math.max(0, Number(raw.stockCount ?? raw.stock ?? ((raw.inStock ?? raw.in_stock) === false ? 0 : 1))),
             originalPrice: Number(raw.originalPrice ?? raw.compareAtPrice ?? raw.price) || 0,
-            offer: raw.offer === true || Number(raw.originalPrice ?? raw.compareAtPrice ?? 0) > Number(raw.price ?? 0),
+            offer: raw.offer === true || raw.isSpecialOffer === true || Number(raw.originalPrice ?? raw.compareAtPrice ?? 0) > Number(raw.price ?? 0),
+            isSpecialOffer: raw.isSpecialOffer === true || raw.offer === true || Number(raw.originalPrice ?? raw.compareAtPrice ?? 0) > Number(raw.price ?? 0),
+            packing: Array.isArray(raw.units) ? raw.units.join(", ") : (typeof raw.packing === "string" ? raw.packing : parsedUnits.join(", ")),
           } as Product;
         });
         setProducts(list);
@@ -955,22 +960,26 @@ export default function VisualAdminProtectedPage() {
   };
 
   const downloadCsv = () => {
-    const columns = ["id", "name", "category", "price", "brand", "stockCount", "originalPrice", "offer", "photoUrl"] as const;
-    const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-    const getProductValue = (product: Product, column: typeof columns[number]) => {
-      if (column === "name") {
-        return product.name || product.nameGu || product.nameEn || "";
+    try {
+      if (products.length === 0) {
+        showToast("No products found to export.");
+        return;
       }
-      return product[column as keyof Product] ?? "";
-    };
-    const csv = [columns.join(","), ...products.map((product) => columns.map((column) => csvCell(getProductValue(product, column))).join(","))].join("\r\n");
-    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `store-rates-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    showToast("CSV rate list exported.");
+      const csvString = exportProductsToCsvString(products);
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `store-rates-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${products.length} products to Excel-ready CSV.`);
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to export CSV.");
+    }
   };
 
   const importCsv = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -978,79 +987,22 @@ export default function VisualAdminProtectedPage() {
     event.target.value = "";
     setCsvError("");
     if (!file) return;
+
     try {
-      const lines = (await file.text()).replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
-      if (lines.length < 2) throw new Error("CSV needs a header row and at least one product.");
-      const parseRow = (line: string) => {
-        const cells: string[] = [];
-        let cell = "";
-        let quoted = false;
-        for (let index = 0; index < line.length; index += 1) {
-          const character = line[index];
-          if (character === '"' && quoted && line[index + 1] === '"') { cell += '"'; index += 1; }
-          else if (character === '"') quoted = !quoted;
-          else if (character === "," && !quoted) { cells.push(cell); cell = ""; }
-          else cell += character;
-        }
-        cells.push(cell);
-        return cells;
-      };
-      const headers = parseRow(lines[0]).map((header) => header.trim());
-      const hasNameHeader = headers.some((h) =>
-        ["name", "Item name", "itemName", "item_name", "nameGu", "nameEn"].some((k) => k.toLowerCase() === h.toLowerCase())
-      );
-      const hasCategory = headers.some((h) => h.toLowerCase() === "category");
-      const hasPrice = headers.some((h) => h.toLowerCase() === "price");
-      if (!hasNameHeader || !hasCategory || !hasPrice) {
-        throw new Error("Required CSV columns: name (or Item name / itemName / nameGu), category, price.");
-      }
-      const imported = lines.slice(1).map((line, rowIndex) => {
-        const values = parseRow(line);
-        const record = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])) as Record<string, string>;
-        const parsedName = (
-          record.name ||
-          record["Item name"] ||
-          record["item name"] ||
-          record.itemName ||
-          record.item_name ||
-          record.nameGu ||
-          record.name_gu ||
-          record.nameEn ||
-          record.name_en ||
-          ""
-        ).trim();
-        const price = Number(record.price);
-        if (!parsedName || !Number.isFinite(price) || price < 0) throw new Error(`Invalid product data on row ${rowIndex + 2}.`);
-        const id = record.id?.trim() || `csv_${Date.now()}_${rowIndex}`;
-        return {
-          id,
-          name: parsedName,
-          nameGu: parsedName,
-          name_gu: parsedName,
-          nameEn: record.nameEn || record.name_en || parsedName,
-          name_en: record.nameEn || record.name_en || parsedName,
-          category: record.category || "General",
-          price,
-          brand: record.brand || "Other",
-          stockCount: Math.max(0, Number(record.stockCount || 1)),
-          originalPrice: Number(record.originalPrice || price),
-          offer: record.offer === "true",
-          units: ["1 pc"],
-          inStock: Number(record.stockCount || 1) > 0,
-          in_stock: Number(record.stockCount || 1) > 0,
-          photoUrl: record.photoUrl || ""
-        };
-      });
-      for (let start = 0; start < imported.length; start += 450) {
+      const csvText = await file.text();
+      const preparedList = prepareImportProducts(csvText, products);
+
+      for (let start = 0; start < preparedList.length; start += 400) {
         const batch = writeBatch(db);
-        imported.slice(start, start + 450).forEach((product) => {
-          const { id, ...data } = product;
-          batch.set(doc(db, "products", id), data, { merge: true });
+        const batchChunk = preparedList.slice(start, start + 400);
+        batchChunk.forEach((item) => {
+          batch.set(doc(db, "products", item.id), item.payload, { merge: true });
         });
         await batch.commit();
       }
+
       await loadData();
-      showToast(`${imported.length} products imported from CSV.`);
+      showToast(`Imported/updated ${preparedList.length} products (all product photos preserved).`);
     } catch (error) {
       console.error(error);
       const message = error instanceof Error ? error.message : "CSV import failed.";
@@ -1177,16 +1129,16 @@ export default function VisualAdminProtectedPage() {
             <span className="truncate inline-flex items-center gap-2"><ShieldCheck size={16} /> Active Admin: {currentUser?.email || "Verified Admin"}</span>
             <div
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono font-bold tracking-tight shadow-xs ${
-                sessionRemainingSeconds <= 60
+                sessionRemainingSeconds <= 300
                   ? "bg-rose-950/80 border-rose-400 text-rose-200 animate-pulse"
-                  : sessionRemainingSeconds <= 120
+                  : sessionRemainingSeconds <= 1800
                   ? "bg-amber-950/70 border-amber-400 text-amber-200"
                   : "bg-black/40 border-emerald-400/50 text-emerald-200"
               }`}
-              title="Security session expires in 5 minutes. You will be automatically redirected to the store home."
+              title="Security session expires in 24 hours. You will be automatically redirected to the store home."
             >
-              <Clock size={12} className={sessionRemainingSeconds <= 60 ? "text-rose-400 animate-spin" : "text-emerald-300"} />
-              <span>Expires: {Math.floor(sessionRemainingSeconds / 60)}:{(sessionRemainingSeconds % 60).toString().padStart(2, "0")}</span>
+              <Clock size={12} className={sessionRemainingSeconds <= 300 ? "text-rose-400 animate-spin" : "text-emerald-300"} />
+              <span>Expires: {formatSessionRemaining(sessionRemainingSeconds)}</span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">

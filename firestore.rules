@@ -1,8 +1,48 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+    
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email in [
+        'dhawalsolanki97@gmail.com',
+        'secondadmin@gmail.com',
+        'vimalsolanki8990@gmail.com',
+        'dhavaljsolankii@gmail.com'
+      ];
+    }
+
+    match /products/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /banners/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /storeSettings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /store_settings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /siteMetrics/{id} {
+      allow read: if true;
+      allow create, update: if true; 
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{id} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /admin_magic_tokens/{id} {
+      allow read, create, update: if true; // Needed for magic link flow
+      allow delete: if isAdmin();
     }
   }
 }

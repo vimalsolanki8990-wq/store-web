@@ -28,8 +28,9 @@ export const ADMIN_PHONE = DEFAULT_ADMIN.displayPhone;
 export const ADMIN_PHONE_DIGITS = DEFAULT_ADMIN.phone;
 
 export const MAGIC_LINK_BASE_URL = "https://vachhraj-store.web.app";
-export const TOKEN_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
-export const SESSION_EXPIRY_MS = 5 * 60 * 1000; // Strict 5-minute hard session expiry
+export const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours (86,400,000 ms)
+export const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours (86,400,000 ms)
+export const SESSION_EXPIRY_SECONDS = 24 * 60 * 60; // 86,400 seconds
 
 export const AUTH_COOKIE_NAME = "store_admin_auth";
 export const INSTANCE_LOCK_KEY = "admin_instance_lock";
@@ -145,13 +146,34 @@ export function getCookie(name: string): string | null {
 }
 
 /**
- * Set verified admin session in localStorage & cookie (5-minute hard limit)
+ * Format remaining session seconds cleanly for UI display (e.g. "23h 59m", "24h", "45m 30s", "45s")
+ */
+export function formatSessionRemaining(totalSeconds: number): string {
+  if (totalSeconds <= 0) return "0s";
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    if (minutes === 0) {
+      return `${hours}h`;
+    }
+    return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+  }
+  return `${seconds}s`;
+}
+
+/**
+ * Set verified admin session in localStorage & cookie (24-hour limit)
  */
 export function setAdminSession(token: string, admin?: AdminProfile): AdminSessionRecord {
   const now = Date.now();
   const chosenAdmin = admin || DEFAULT_ADMIN;
   const instanceId = "inst_" + Math.random().toString(36).slice(2) + "_" + now.toString(36);
-  const expiresAt = now + SESSION_EXPIRY_MS;
+  const expiresAt = now + SESSION_EXPIRY_MS; // 24 hours
 
   const session: AdminSessionRecord = {
     token,
@@ -171,11 +193,12 @@ export function setAdminSession(token: string, admin?: AdminProfile): AdminSessi
       sessionStorage.setItem("admin_session_active", "true");
       sessionStorage.setItem("admin_session_identity", JSON.stringify(chosenAdmin));
 
-      // 5-minute strict cookie
+      // 24-hour cookie (86,400 seconds)
+      const remainingSec = Math.max(1, Math.floor((expiresAt - now) / 1000));
       const cookieValue = `${token}.${expiresAt}.${instanceId}`;
       const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
-      document.cookie = `${AUTH_COOKIE_NAME}=${cookieValue}; path=/; max-age=300; SameSite=Strict${secureFlag}`;
-      document.cookie = `${STORAGE_KEY_SESSION}=${token}; path=/; max-age=300; SameSite=Strict${secureFlag}`;
+      document.cookie = `${AUTH_COOKIE_NAME}=${cookieValue}; path=/; max-age=${remainingSec}; SameSite=Strict${secureFlag}`;
+      document.cookie = `${STORAGE_KEY_SESSION}=${token}; path=/; max-age=${remainingSec}; SameSite=Strict${secureFlag}`;
     } catch (e) {
       console.warn("Failed saving admin session to storage:", e);
     }
@@ -185,13 +208,13 @@ export function setAdminSession(token: string, admin?: AdminProfile): AdminSessi
 }
 
 /**
- * Set verified Google admin session in localStorage & cookie (5-minute hard limit)
+ * Set verified Google admin session in localStorage & cookie (24-hour limit)
  */
 export function setGoogleAdminSession(user: { email: string; displayName?: string | null; uid?: string }): AdminSessionRecord {
   const now = Date.now();
   const token = "google_admin_" + (user.uid || Math.random().toString(36).slice(2) + "_" + now);
   const instanceId = "inst_" + Math.random().toString(36).slice(2) + "_" + now.toString(36);
-  const expiresAt = now + SESSION_EXPIRY_MS; // Exactly 5 minutes from login
+  const expiresAt = now + SESSION_EXPIRY_MS; // Exactly 24 hours from login
 
   const session: AdminSessionRecord = {
     token,
@@ -212,11 +235,12 @@ export function setGoogleAdminSession(user: { email: string; displayName?: strin
       sessionStorage.setItem("admin_session_active", "true");
       sessionStorage.setItem("admin_session_identity", JSON.stringify(session));
 
-      // 5-minute strict cookie
+      // 24-hour cookie (86,400 seconds)
+      const remainingSec = Math.max(1, Math.floor((expiresAt - now) / 1000));
       const cookieValue = `${token}.${expiresAt}.${instanceId}`;
       const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
-      document.cookie = `${AUTH_COOKIE_NAME}=${cookieValue}; path=/; max-age=300; SameSite=Strict${secureFlag}`;
-      document.cookie = `${STORAGE_KEY_SESSION}=${token}; path=/; max-age=300; SameSite=Strict${secureFlag}`;
+      document.cookie = `${AUTH_COOKIE_NAME}=${cookieValue}; path=/; max-age=${remainingSec}; SameSite=Strict${secureFlag}`;
+      document.cookie = `${STORAGE_KEY_SESSION}=${token}; path=/; max-age=${remainingSec}; SameSite=Strict${secureFlag}`;
     } catch (e) {
       console.warn("Failed saving admin session to storage:", e);
     }
@@ -241,7 +265,25 @@ export function getAdminSession(): AdminSessionRecord | null {
       return null;
     }
 
-    // 5-minute hard expiration check
+    // Auto-migrate legacy 5-minute sessions to 24 hours if verified within the last 24 hours
+    if (session.verifiedAt && session.expiresAt - session.verifiedAt < SESSION_EXPIRY_MS) {
+      const updatedExpiry = session.verifiedAt + SESSION_EXPIRY_MS;
+      if (updatedExpiry > Date.now()) {
+        session.expiresAt = updatedExpiry;
+        try {
+          localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(session));
+          const remainingSec = Math.max(1, Math.floor((updatedExpiry - Date.now()) / 1000));
+          const cookieValue = `${session.token}.${updatedExpiry}.${session.instanceId || ""}`;
+          const secureFlag = typeof window !== "undefined" && window.location.protocol === "https:" ? "; Secure" : "";
+          document.cookie = `${AUTH_COOKIE_NAME}=${cookieValue}; path=/; max-age=${remainingSec}; SameSite=Strict${secureFlag}`;
+          document.cookie = `${STORAGE_KEY_SESSION}=${session.token}; path=/; max-age=${remainingSec}; SameSite=Strict${secureFlag}`;
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // 24-hour hard expiration check
     if (Date.now() >= session.expiresAt) {
       clearAdminSession();
       return null;
@@ -263,29 +305,43 @@ export function isValidAdminSession(): boolean {
   const session = getAdminSession();
   if (!session) return false;
 
-  // 1. Strict 5-minute hard expiry
+  // 1. Strict 24-hour hard expiry
   if (Date.now() >= session.expiresAt) {
     clearAdminSession();
     return false;
   }
 
-  // 2. Browser instance isolation: check sessionStorage lock
+  // 2. Browser instance isolation: check sessionStorage lock and heal on tab refresh
   if (session.instanceId) {
     try {
-      const activeLock = sessionStorage.getItem(INSTANCE_LOCK_KEY);
-      if (!activeLock || activeLock !== session.instanceId) {
+      let activeLock = sessionStorage.getItem(INSTANCE_LOCK_KEY);
+      if (!activeLock) {
+        // Tab was refreshed or reopened: heal sessionStorage lock from verified session
+        sessionStorage.setItem(INSTANCE_LOCK_KEY, session.instanceId);
+        sessionStorage.setItem("admin_session_active", "true");
+        activeLock = session.instanceId;
+      }
+      if (activeLock !== session.instanceId) {
         clearAdminSession();
         return false;
       }
     } catch {
-      clearAdminSession();
-      return false;
+      // ignore
     }
   }
 
-  // 3. Strict cookie verification
+  // 3. Strict cookie verification with auto-healing for 24-hour session
   const cookieValue = getCookie(AUTH_COOKIE_NAME);
   if (!cookieValue) {
+    // If cookie was cleared on browser restart or tab refresh, re-sync cookie if session is within 24h
+    if (session.expiresAt > Date.now()) {
+      const remainingSec = Math.max(1, Math.floor((session.expiresAt - Date.now()) / 1000));
+      const newCookieVal = `${session.token}.${session.expiresAt}.${session.instanceId || ""}`;
+      const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = `${AUTH_COOKIE_NAME}=${newCookieVal}; path=/; max-age=${remainingSec}; SameSite=Strict${secureFlag}`;
+      document.cookie = `${STORAGE_KEY_SESSION}=${session.token}; path=/; max-age=${remainingSec}; SameSite=Strict${secureFlag}`;
+      return true;
+    }
     clearAdminSession();
     return false;
   }
@@ -300,7 +356,7 @@ export function isValidAdminSession(): boolean {
 }
 
 /**
- * Calculate remaining seconds of the 5-minute security session
+ * Calculate remaining seconds of the 24-hour security session
  */
 export function getRemainingSessionSeconds(): number {
   if (typeof window === "undefined") return 0;

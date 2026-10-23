@@ -10,10 +10,14 @@ export interface Product {
   price: number;
   inStock: boolean;
   photoUrl: string;
+  photo_url?: string;
   brand: string;
   stockCount: number;
+  quantity?: number;
   originalPrice: number;
   offer: boolean;
+  isSpecialOffer?: boolean;
+  packing?: string;
 }
 
 export function getProductDisplayName(product: Partial<Product> | null | undefined): string {
