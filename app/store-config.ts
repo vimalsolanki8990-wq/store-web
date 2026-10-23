@@ -63,6 +63,10 @@ export interface StoreSettings {
   showInstallBanner: boolean;
   heroTitle: string;
   heroSubtitle: string;
+  heroBadge: string;
+  heroSubBadge: string;
+  heroBtn1Text: string;
+  heroBtn2Text: string;
 }
 
 export const DEFAULT_CATEGORIES: StoreCategory[] = [
@@ -157,6 +161,10 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   showInstallBanner: true,
   heroTitle: "ઘરે બેઠા ઓર્ડર કરો, ફ્રી ડિલિવરી મેળવો",
   heroSubtitle: "Zanzmer અને આસપાસના વિસ્તારોમાં તાજા કરિયાણાની ઝડપી ડિલિવરી. અત્યારે જ ઓર્ડર કરો!",
+  heroBadge: "10% OFFER",
+  heroSubBadge: "DEAL OF THE DAY",
+  heroBtn1Text: "Shop Pure Oil",
+  heroBtn2Text: "View Seasonal Spices",
 };
 
 export const THEME_PRESETS: Record<string, ThemePreset> = {
@@ -357,5 +365,9 @@ export function normalizeStoreSettings(data: Record<string, unknown> = {}): Stor
     showInstallBanner: data.showInstallBanner !== false,
     heroTitle: String(data.heroTitle ?? DEFAULT_STORE_SETTINGS.heroTitle),
     heroSubtitle: String(data.heroSubtitle ?? DEFAULT_STORE_SETTINGS.heroSubtitle),
+    heroBadge: String(data.heroBadge ?? DEFAULT_STORE_SETTINGS.heroBadge),
+    heroSubBadge: String(data.heroSubBadge ?? DEFAULT_STORE_SETTINGS.heroSubBadge),
+    heroBtn1Text: String(data.heroBtn1Text ?? DEFAULT_STORE_SETTINGS.heroBtn1Text),
+    heroBtn2Text: String(data.heroBtn2Text ?? DEFAULT_STORE_SETTINGS.heroBtn2Text),
   };
 }

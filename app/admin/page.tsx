@@ -2796,6 +2796,54 @@ export default function VisualAdminProtectedPage() {
                         className="w-full resize-y rounded-xl border border-[#34445f] bg-[#0c1322] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
                       />
                     </label>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                        Top Badge Text (e.g., 10% OFFER)
+                        <input
+                          type="text"
+                          value={settingsForm.heroBadge || ""}
+                          onChange={(event) => setSettingsForm((current) => ({ ...current, heroBadge: event.target.value }))}
+                          placeholder="10% OFFER"
+                          className="w-full rounded-xl border border-[#34445f] bg-[#0c1322] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                        />
+                      </label>
+
+                      <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                        Sub-Badge Text (e.g., DEAL OF THE DAY)
+                        <input
+                          type="text"
+                          value={settingsForm.heroSubBadge || ""}
+                          onChange={(event) => setSettingsForm((current) => ({ ...current, heroSubBadge: event.target.value }))}
+                          placeholder="DEAL OF THE DAY"
+                          className="w-full rounded-xl border border-[#34445f] bg-[#0c1322] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                        Button 1 Text
+                        <input
+                          type="text"
+                          value={settingsForm.heroBtn1Text || ""}
+                          onChange={(event) => setSettingsForm((current) => ({ ...current, heroBtn1Text: event.target.value }))}
+                          placeholder="Shop Pure Oil"
+                          className="w-full rounded-xl border border-[#34445f] bg-[#0c1322] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                        />
+                      </label>
+
+                      <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
+                        Button 2 Text
+                        <input
+                          type="text"
+                          value={settingsForm.heroBtn2Text || ""}
+                          onChange={(event) => setSettingsForm((current) => ({ ...current, heroBtn2Text: event.target.value }))}
+                          placeholder="View Seasonal Spices"
+                          className="w-full rounded-xl border border-[#34445f] bg-[#0c1322] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                        />
+                      </label>
+                    </div>
                   </section>
 
                   {/* Sticky Notice Bar */}

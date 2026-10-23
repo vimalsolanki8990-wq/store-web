@@ -1283,10 +1283,10 @@ export default function CustomerStorePage() {
           <div className="relative z-10 max-w-lg">
             <div className="flex items-center gap-2 mb-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500 text-white text-[11px] font-black uppercase tracking-wider shadow-xs">
-                <Sparkles size={12} /> 10% Offer
+                <Sparkles size={12} /> {storeSettings.heroBadge}
               </span>
               <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
-                Deal of the Day
+                {storeSettings.heroSubBadge}
               </span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 leading-snug">
@@ -1304,7 +1304,7 @@ export default function CustomerStorePage() {
                 }}
                 className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-xs font-bold shadow-xs transition"
               >
-                Shop Pure Oil
+                {storeSettings.heroBtn1Text}
               </button>
               <button
                 type="button"
@@ -1314,7 +1314,7 @@ export default function CustomerStorePage() {
                 }}
                 className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 border border-orange-200 text-amber-950 text-xs font-bold shadow-2xs transition"
               >
-                View Seasonal Spices
+                {storeSettings.heroBtn2Text}
               </button>
             </div>
           </div>
