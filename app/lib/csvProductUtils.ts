@@ -257,6 +257,19 @@ export const PRIMARY_STORE_CATEGORIES: PrimaryCategoryConfig[] = [
 ];
 
 /**
+ * Robust category normalization helper:
+ * Converts to lowercase, trims, replaces '&' with 'and', and removes non-alphanumeric characters.
+ */
+export const normalizeCategory = (cat?: string): string => {
+  if (!cat) return "";
+  return cat
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]/g, ""); // removes spaces, dashes, underscores, symbols
+};
+
+/**
  * Normalize any category string (including Gujarati text, English aliases,
  * or raw Firestore store settings ID like 'category_1792246279849')
  * strictly into one of the 7 primary store categories.
@@ -270,11 +283,13 @@ export function normalizeCategoryToPrimary(
   }
 
   const clean = rawCat.trim().toLowerCase();
+  const normKey = normalizeCategory(rawCat);
+  const strippedKey = normKey.replace(/and/g, "");
 
   // 1. If it matches a raw system ID like "category_1792246279849", resolve via storeCategories
   if (storeCategories && storeCategories.length > 0) {
     const matchedStoreCat = storeCategories.find(
-      (sc) => sc.id.toLowerCase() === clean
+      (sc) => sc.id.toLowerCase() === clean || normalizeCategory(sc.id) === normKey
     );
     if (
       matchedStoreCat &&
@@ -285,20 +300,31 @@ export function normalizeCategoryToPrimary(
     }
   }
 
-  // 2. Exact match check
+  // 2. Exact match check (including normalized slug and & / and variants)
   for (const primary of PRIMARY_STORE_CATEGORIES) {
+    const normSheet = normalizeCategory(primary.sheetName);
+    const normId = normalizeCategory(primary.id);
     if (
       primary.id.toLowerCase() === clean ||
       primary.sheetName.toLowerCase() === clean ||
       primary.englishName.toLowerCase() === clean ||
       primary.gujaratiName.toLowerCase() === clean ||
-      primary.displayName.toLowerCase() === clean
+      primary.displayName.toLowerCase() === clean ||
+      normSheet === normKey ||
+      normId === normKey ||
+      normSheet.replace(/and/g, "") === strippedKey ||
+      normId.replace(/and/g, "") === strippedKey
     ) {
       return primary;
     }
 
     for (const alias of primary.aliases) {
-      if (alias.toLowerCase() === clean) {
+      const normAlias = normalizeCategory(alias);
+      if (
+        alias.toLowerCase() === clean ||
+        normAlias === normKey ||
+        normAlias.replace(/and/g, "") === strippedKey
+      ) {
         return primary;
       }
     }

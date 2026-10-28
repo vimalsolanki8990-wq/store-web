@@ -1377,8 +1377,18 @@ export default function VisualAdminProtectedPage() {
   const filteredProducts = products.filter((p) => {
     const matchesStock = !stockFilterOnly || !p.inStock || p.stockCount <= 0;
     const norm = (str?: string) => (str || "").trim().toLowerCase();
+    const normalizeCategory = (cat?: string): string => {
+      if (!cat) return "";
+      return cat
+        .toLowerCase()
+        .trim()
+        .replace(/&/g, "and")
+        .replace(/[^a-z0-9]/g, "");
+    };
     const normActive = norm(activeCategory);
     const prodCat = norm(p.category || p.categoryName || p.category_name);
+    const normKey = normalizeCategory(activeCategory);
+    const prodKey = normalizeCategory(p.category || p.categoryName || p.category_name);
 
     let matchesCat = 
       normActive === "all" || 
@@ -1386,7 +1396,9 @@ export default function VisualAdminProtectedPage() {
       !normActive ||
       prodCat === normActive ||
       prodCat.replace(/\s+/g, "-") === normActive ||
-      normActive.replace(/\s+/g, "-") === prodCat;
+      normActive.replace(/\s+/g, "-") === prodCat ||
+      prodKey === normKey ||
+      prodKey.replace(/and/g, "") === normKey.replace(/and/g, "");
 
     if (!matchesCat) {
       const allAdminCats = settingsForm.categories.length ? settingsForm.categories : DEFAULT_CATEGORIES;

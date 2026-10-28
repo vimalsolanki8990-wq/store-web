@@ -10,6 +10,15 @@ import AdminStealthAuthModal from "./components/AdminStealthAuthModal";
 import { matchesGroceryQuery } from "./lib/searchUtils";
 import { normalizeCategoryToPrimary } from "./lib/csvProductUtils";
 
+export const normalizeCategory = (cat?: string): string => {
+  if (!cat) return "";
+  return cat
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]/g, ""); // removes spaces, dashes, underscores, symbols
+};
+
 const normalize = (str?: string) => (str || "").trim().toLowerCase();
 
 interface Product {
@@ -1155,31 +1164,33 @@ export default function CustomerStorePage() {
 
     return products
       .filter((p) => {
-        const norm = (str?: string) => (str || "").trim().toLowerCase();
-        const normActive = norm(selectedCategory || activeCategory);
-        const prodCat = norm(p.category || p.categoryName || p.category_name);
+        const normKey = normalizeCategory(selectedCategory || activeCategory);
+        const prodKey = normalizeCategory(p.category || p.categoryName || p.category_name);
 
         let matchesCat = 
-          normActive === "all" || 
-          normActive === "all items" || 
-          !normActive ||
-          prodCat === normActive ||
-          prodCat.replace(/\s+/g, "-") === normActive ||
-          normActive.replace(/\s+/g, "-") === prodCat;
+          !normKey ||
+          normKey === "all" || 
+          normKey === "allitems" || 
+          prodKey === normKey ||
+          prodKey.replace(/and/g, "") === normKey.replace(/and/g, "");
 
         // Cross-check against store settings categories (id <-> name)
         if (!matchesCat) {
           const matchedCategoryObj = allStoreCategories.find(
             (cat) =>
-              norm(cat.id) === normActive ||
-              norm(cat.name) === normActive
+              normalizeCategory(cat.id) === normKey ||
+              normalizeCategory(cat.name) === normKey ||
+              normalizeCategory(cat.id).replace(/and/g, "") === normKey.replace(/and/g, "") ||
+              normalizeCategory(cat.name).replace(/and/g, "") === normKey.replace(/and/g, "")
           );
           if (matchedCategoryObj) {
+            const normObjName = normalizeCategory(matchedCategoryObj.name);
+            const normObjId = normalizeCategory(matchedCategoryObj.id);
             matchesCat =
-              norm(matchedCategoryObj.name) === prodCat ||
-              norm(matchedCategoryObj.id) === prodCat ||
-              norm(matchedCategoryObj.name).replace(/\s+/g, "-") === prodCat ||
-              norm(matchedCategoryObj.id).replace(/\s+/g, "-") === prodCat;
+              normObjName === prodKey ||
+              normObjId === prodKey ||
+              normObjName.replace(/and/g, "") === prodKey.replace(/and/g, "") ||
+              normObjId.replace(/and/g, "") === prodKey.replace(/and/g, "");
           }
         }
 
@@ -1643,13 +1654,12 @@ export default function CustomerStorePage() {
           </div>
           <div className="flex items-start gap-3 sm:gap-4 overflow-x-auto pb-1.5 pt-0.5 no-scrollbar scroll-smooth lg:flex-col lg:overflow-x-visible lg:gap-2 lg:pb-0 lg:pt-0 lg:w-full">
             {allCategories.map((cat) => {
+              const normCat = normalizeCategory(cat.name || cat.id);
+              const normSel = normalizeCategory(selectedCategory);
               const isSel =
-                normalize(selectedCategory) === normalize(cat.id) ||
-                normalize(selectedCategory) === normalize(cat.name) ||
-                (cat.id === "all" &&
-                  (normalize(selectedCategory) === "all" ||
-                    normalize(selectedCategory) === "all items" ||
-                    !selectedCategory));
+                normSel === normCat ||
+                normSel.replace(/and/g, "") === normCat.replace(/and/g, "") ||
+                (cat.id === "all" && (!normSel || normSel === "all" || normSel === "allitems"));
               const CategoryIcon = CATEGORY_ICONS[cat.icon] ?? Sparkles;
               return (
                 <button

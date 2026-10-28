@@ -3,6 +3,19 @@ import { normalizeCategoryToPrimary } from "../app/lib/csvProductUtils";
 import { DEFAULT_CATEGORIES, StoreCategory } from "../app/store-config";
 
 /**
+ * Robust category normalization helper:
+ * Converts to lowercase, trims, replaces '&' with 'and', and removes non-alphanumeric characters.
+ */
+export const normalizeCategory = (cat?: string): string => {
+  if (!cat) return "";
+  return cat
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]/g, ""); // removes spaces, dashes, underscores, symbols
+};
+
+/**
  * Normalizes strings by trimming whitespace and converting to lowercase.
  */
 export const normalize = (str?: string): string => (str || "").trim().toLowerCase();
@@ -17,16 +30,17 @@ export function matchesCategory(
   storeCategories: StoreCategory[] = DEFAULT_CATEGORIES
 ): boolean {
   if (!selectedCategoryRaw) return true;
-  const normSelected = normalize(selectedCategoryRaw);
-  if (!normSelected || normSelected === "all" || normSelected === "all items") {
+  const normFilter = normalizeCategory(selectedCategoryRaw);
+  if (!normFilter || normFilter === "all" || normFilter === "allitems") {
     return true;
   }
 
-  const normItem = normalize(itemCategoryRaw);
+  const normItem = normalizeCategory(itemCategoryRaw);
+  if (!normItem) return false;
+
   if (
-    normItem === normSelected ||
-    normItem.replace(/\s+/g, "-") === normSelected ||
-    normSelected.replace(/\s+/g, "-") === normItem
+    normItem === normFilter ||
+    normItem.replace(/and/g, "") === normFilter.replace(/and/g, "")
   ) {
     return true;
   }
@@ -34,12 +48,20 @@ export function matchesCategory(
   // Check store settings categories (cross-check id <-> name)
   const allCategories = storeCategories.length ? storeCategories : DEFAULT_CATEGORIES;
   const matchedCategoryObj = allCategories.find(
-    (cat) => normalize(cat.id) === normSelected || normalize(cat.name) === normSelected
+    (cat) =>
+      normalizeCategory(cat.id) === normFilter ||
+      normalizeCategory(cat.name) === normFilter ||
+      normalizeCategory(cat.id).replace(/and/g, "") === normFilter.replace(/and/g, "") ||
+      normalizeCategory(cat.name).replace(/and/g, "") === normFilter.replace(/and/g, "")
   );
   if (matchedCategoryObj) {
+    const normObjName = normalizeCategory(matchedCategoryObj.name);
+    const normObjId = normalizeCategory(matchedCategoryObj.id);
     if (
-      normalize(matchedCategoryObj.name) === normItem ||
-      normalize(matchedCategoryObj.id) === normItem
+      normObjName === normItem ||
+      normObjId === normItem ||
+      normObjName.replace(/and/g, "") === normItem.replace(/and/g, "") ||
+      normObjId.replace(/and/g, "") === normItem.replace(/and/g, "")
     ) {
       return true;
     }

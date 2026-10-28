@@ -5,6 +5,15 @@ import { Product } from "../app/types/product";
 import { StoreCategory, DEFAULT_CATEGORIES } from "../app/store-config";
 import { matchesCategory } from "../lib/products";
 
+export const normalizeCategory = (cat?: string): string => {
+  if (!cat) return "";
+  return cat
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]/g, ""); // removes spaces, dashes, underscores, symbols
+};
+
 export const normalize = (str?: string) => (str || "").trim().toLowerCase();
 
 export interface ProductGridProps {
@@ -40,27 +49,21 @@ export function ProductGrid({
   console.log("Selected:", selectedCategory, "Sample Item Category:", products[0]?.category);
 
   const filteredProducts = useMemo(() => {
-    const norm = (str?: string) => (str || "").trim().toLowerCase();
-    const normActive = norm(selectedCategory);
+    const normKey = normalizeCategory(selectedCategory);
 
-    if (!normActive || normActive === "all" || normActive === "all items") {
+    if (!normKey || normKey === "all" || normKey === "allitems") {
       return products;
     }
 
     return products.filter((item) => {
-      const prodCat = norm(item.category || (item as any).categoryName || (item as any).category_name);
+      const prodKey = normalizeCategory(item.category || (item as any).categoryName || (item as any).category_name);
 
-      const matchesCat = 
-        prodCat === normActive ||
-        prodCat.replace(/\s+/g, "-") === normActive ||
-        normActive.replace(/\s+/g, "-") === prodCat;
+      const matchesCat =
+        prodKey === normKey ||
+        prodKey.replace(/and/g, "") === normKey.replace(/and/g, "") ||
+        matchesCategory(item.category, selectedCategory, storeCategories);
 
-      if (matchesCat) {
-        return true;
-      }
-
-      // Cross-match via store categories and primary category aliases
-      return matchesCategory(prodCat, selectedCategory, storeCategories);
+      return matchesCat;
     });
   }, [products, selectedCategory, storeCategories]);
 

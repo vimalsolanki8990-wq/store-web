@@ -70,12 +70,13 @@ export interface StoreSettings {
 }
 
 export const DEFAULT_CATEGORIES: StoreCategory[] = [
-  { id: "કઠોળ-અનાજ", name: "Grains & Pulses", icon: "Wheat" },
-  { id: "તેલ-ઘી", name: "Oil & Ghee", icon: "Droplets" },
-  { id: "મસાલા", name: "Spices", icon: "Flame" },
-  { id: "નાસ્તો-ફરસાણ", name: "Snacks", icon: "Cookie" },
-  { id: "પર્સનલ કેર", name: "Personal Care", icon: "Sparkles" },
-  { id: "પૂજાપો-અન્ય", name: "Pooja & Others", icon: "Lamp" },
+  { id: "grains-pulses", name: "Grains & Pulses", icon: "Wheat" },
+  { id: "oil-ghee", name: "Oil & Ghee", icon: "Droplets" },
+  { id: "spices", name: "Spices", icon: "Flame" },
+  { id: "snacks", name: "Snacks", icon: "Cookie" },
+  { id: "personal-care", name: "Personal Care", icon: "Sparkles" },
+  { id: "pooja-others", name: "Pooja & Others", icon: "Lamp" },
+  { id: "liquid", name: "Liquid", icon: "CupSoda" },
 ];
 
 const CLEAN_LIGHT_PALETTE: ThemePalette = {
