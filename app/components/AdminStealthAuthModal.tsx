@@ -47,6 +47,17 @@ export default function AdminStealthAuthModal({
   // Reset modal state on open/close
   useEffect(() => {
     if (isOpen) {
+      if (typeof window !== "undefined") {
+        const savedExpiry = localStorage.getItem('adminSessionExpiry');
+        if (savedExpiry) {
+          const timeLeft = parseInt(savedExpiry, 10) - Date.now();
+          if (timeLeft > 3600000) {
+            localStorage.removeItem('adminSessionExpiry');
+            localStorage.setItem('adminSessionExpiry', (Date.now() + 3600000).toString());
+          }
+        }
+      }
+
       setStep("pin");
       setPinDigits(["", "", "", ""]);
       setPinError(null);
@@ -171,6 +182,8 @@ export default function AdminStealthAuthModal({
 
       if (userEmail && isAdminEmail(userEmail)) {
         // Authorized administrator verified!
+        const expiryTime = Date.now() + 1 * 60 * 60 * 1000; // 1 hour
+        localStorage.setItem('adminSessionExpiry', expiryTime.toString());
         setGoogleAdminSession({
           email: userEmail,
           displayName: user.displayName || userEmail,
@@ -314,7 +327,7 @@ export default function AdminStealthAuthModal({
             {/* PIN Verified Chip */}
             <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-950/40 py-2 px-3 text-xs font-bold text-emerald-300 shadow-xs">
               <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
-              <span>PIN 1997 Verified Successfully</span>
+              <span>PIN Verified Successfully</span>
             </div>
 
             {/* Error Message if unauthorized */}

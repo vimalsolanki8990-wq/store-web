@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef, useDeferredValue } from "react";
+import { useState, useEffect, useRef, useDeferredValue, useMemo, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
 import { db } from "./firebase";
 import { addDoc, collection, doc, getDocs, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
-import html2canvas from "html2canvas";
-import { Camera, Check, CheckCircle2, Clock, Copy, ExternalLink, FileDown, FolderOpen, Heart, Home, Loader2, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Store, Tag, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal, Milk, Apple, Carrot, Egg, Coffee, SprayCan, Baby, Croissant, Candy, Beef, CupSoda, Pill, Shirt, Box } from "lucide-react";
+import { Camera, Check, CheckCircle2, ChevronDown, Clock, Copy, ExternalLink, FileDown, FolderOpen, Heart, Home, Loader2, LockKeyhole, MapPin, MessageCircle, Mic, Minus, Phone, Plus, Search, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Store, Tag, Truck, X, Wheat, Droplets, Flame, Cookie, Lamp, Megaphone, Share2, SlidersHorizontal, Milk, Apple, Carrot, Egg, Coffee, SprayCan, Baby, Croissant, Candy, Beef, CupSoda, Pill, Shirt, Box } from "lucide-react";
 import { DEFAULT_CATEGORIES, DEFAULT_STORE_SETTINGS, normalizeStoreSettings, storeThemeCssVars, format12Hour, parseTimeToMinutes, StoreCategory, StoreSettings } from "./store-config";
 import AdminStealthAuthModal from "./components/AdminStealthAuthModal";
 import { matchesGroceryQuery } from "./lib/searchUtils";
+import { normalizeCategoryToPrimary } from "./lib/csvProductUtils";
+
+const normalize = (str?: string) => (str || "").trim().toLowerCase();
 
 interface Product {
   id: string;
@@ -16,6 +18,8 @@ interface Product {
   nameGu?: string;
   nameEn?: string;
   category: string;
+  categoryName?: string;
+  category_name?: string;
   units: string[];
   price: number;
   inStock: boolean;
@@ -87,6 +91,175 @@ const CATEGORY_ICONS: Record<string, typeof Wheat> = {
   Shirt,
   Box,
 };
+
+interface ProductCardProps {
+  item: Product;
+  isFavorite: boolean;
+  inCartQty: number;
+  isBounced: boolean;
+  primaryColor?: string;
+  onToggleFavorite: (id: string) => void;
+  onShareProduct: (product: Product) => void;
+  onAddToCart: (product: Product) => void;
+  onUpdateQty: (id: string, delta: number) => void;
+}
+
+const ProductCard = memo(
+  function ProductCard({
+    item,
+    isFavorite,
+    inCartQty,
+    isBounced,
+    primaryColor,
+    onToggleFavorite,
+    onShareProduct,
+    onAddToCart,
+    onUpdateQty,
+  }: ProductCardProps) {
+    const isAvailable = item.inStock && item.stockCount > 0;
+    const unitChip = item.units && item.units.length > 0 ? item.units[0] : "1 kg";
+
+    return (
+      <div className="bg-white border border-orange-100 rounded-2xl overflow-hidden flex flex-col hover:shadow-md hover:border-orange-200 transition-all duration-200 shadow-xs relative group">
+        <div className="relative w-full aspect-square overflow-hidden rounded-t-2xl">
+          <img
+            src={item.photoUrl}
+            alt={item.name || item.nameGu || item.nameEn || "Grocery Item"}
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
+            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+              !isAvailable ? "grayscale opacity-50" : ""
+            }`}
+          />
+
+          {/* Animated 'SPECIAL OFFER' Corner Badge - Absolutely flush to top-left corner with high-glow shimmer */}
+          {isAvailable && (item.offer || item.originalPrice > item.price) && (
+            <div className="absolute top-0 left-0 z-10 m-0 px-2 sm:px-2.5 py-0.5 text-[8.5px] sm:text-[9.5px] font-bold tracking-wider text-white bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 rounded-tl-2xl rounded-br-lg shadow-sm flex items-center gap-1 select-none pointer-events-none special-offer-badge overflow-hidden">
+              <span className="special-offer-shimmer" />
+              <span className="sparkle-icon text-amber-200 text-[8px] leading-none shrink-0 relative z-10">✦</span>
+              <span className="uppercase whitespace-nowrap relative z-10">SPECIAL OFFER</span>
+              <span className="sparkle-icon-delayed text-amber-200 text-[8px] leading-none shrink-0 relative z-10">✦</span>
+            </div>
+          )}
+
+          {!isAvailable && (
+            <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow z-10 select-none">
+              Out of stock
+            </span>
+          )}
+
+          {/* Favorite Heart & WhatsApp Share Action Icons - Vertical layout to avoid overlap with badge */}
+          <div className="absolute top-2 right-2 z-10 flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={() => onToggleFavorite(item.id)}
+              aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+              aria-pressed={isFavorite}
+              className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full bg-white/95 backdrop-blur-xs flex items-center justify-center shadow-xs border border-slate-200/80 hover:bg-white transition active:scale-90 ${
+                isFavorite ? "text-rose-500" : "text-slate-400 hover:text-rose-500"
+              }`}
+            >
+              <Heart size={13} fill={isFavorite ? "currentColor" : "none"} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onShareProduct(item)}
+              aria-label="Share product on WhatsApp"
+              className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full bg-white/95 backdrop-blur-xs flex items-center justify-center shadow-xs border border-slate-200/80 hover:bg-white text-[#25D366] transition active:scale-90"
+            >
+              <Share2 size={13} />
+            </button>
+          </div>
+        </div>
+
+        {/* Compact Card Content - Centered & Reduced Vertical Gap */}
+        <div className="p-2.5 sm:p-3 flex-1 flex flex-col items-center text-center justify-between gap-1.5 sm:gap-2">
+          <div className="w-full">
+            {/* Centered Product Title */}
+            <h3 className="font-bold text-slate-900 text-xs sm:text-sm line-clamp-2 leading-snug">
+              {item.name || item.nameGu || item.nameEn}
+            </h3>
+
+            {/* Centered Pricing Row: ₹120 / ₹150 / 500g */}
+            <div className="mt-1 flex items-center justify-center flex-wrap gap-1.5">
+              <span className="font-extrabold text-sm sm:text-base" style={{ color: primaryColor || '#ea580c' }}>
+                ₹{item.price}
+              </span>
+              {item.originalPrice > item.price && (
+                <del className="text-[11px] sm:text-xs text-slate-400 font-normal line-through">
+                  ₹{item.originalPrice}
+                </del>
+              )}
+              <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/70">
+                {unitChip}
+              </span>
+            </div>
+          </div>
+
+          {/* Smooth Counter State (- 1 +) or Solid Brand + Add to List Button */}
+          <div className="w-full pt-0.5">
+            {inCartQty > 0 ? (
+              <div className="flex items-center justify-between w-full rounded-xl bg-orange-50 border border-orange-200 p-0.5 sm:p-1">
+                <button
+                  type="button"
+                  onClick={() => onUpdateQty(item.id, -1)}
+                  aria-label="Decrease quantity"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white text-orange-600 font-bold flex items-center justify-center hover:bg-orange-100 active:scale-95 transition shadow-2xs border border-orange-200"
+                >
+                  <Minus size={13} />
+                </button>
+                <span className="font-extrabold text-[11px] sm:text-xs text-orange-950 px-1 sm:px-2">
+                  {inCartQty} in cart
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onUpdateQty(item.id, 1)}
+                  aria-label="Increase quantity"
+                  style={{ backgroundColor: primaryColor || '#ea580c' }}
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-white font-bold flex items-center justify-center hover:opacity-90 active:scale-95 transition shadow-2xs"
+                >
+                  <Plus size={13} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onAddToCart(item)}
+                disabled={!isAvailable}
+                style={isAvailable ? { backgroundColor: primaryColor || '#ea580c' } : undefined}
+                className={`w-full py-2 sm:py-2.5 px-3 rounded-xl font-bold text-xs transition duration-150 active:scale-95 flex items-center justify-center gap-1 shadow-xs ${
+                  isBounced ? "cart-add-bounce" : ""
+                } ${
+                  isAvailable
+                    ? "hover:opacity-95 text-white active:scale-95 shadow-sm"
+                    : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                }`}
+              >
+                {isAvailable ? "+ Add to List" : "Out of stock"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  },
+  (prev, next) => {
+    return (
+      prev.item === next.item &&
+      prev.isFavorite === next.isFavorite &&
+      prev.inCartQty === next.inCartQty &&
+      prev.isBounced === next.isBounced &&
+      prev.primaryColor === next.primaryColor
+    );
+  }
+);
+
+const SORT_OPTIONS: { label: string; value: string }[] = [
+  { label: "Featured Order", value: "featured" },
+  { label: "Price: Low to High", value: "low" },
+  { label: "Price: High to Low", value: "high" },
+];
 
 export default function CustomerStorePage() {
   const router = useRouter();
@@ -202,6 +375,24 @@ export default function CustomerStorePage() {
   const [brandFilter, setBrandFilter] = useState("all");
   const [saleOnly, setSaleOnly] = useState(false);
   const [sortPrice, setSortPrice] = useState("featured");
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(event.target as Node)) {
+        setIsSortOpen(false);
+      }
+    };
+    if (isSortOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isSortOpen]);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
@@ -213,9 +404,11 @@ export default function CustomerStorePage() {
   // Dynamic Sticky Offset tracking for Categories Bar
   const headerStickyRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState<number | null>(null);
+  const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
     const updateHeaderHeight = () => {
+      setIsDesktop(window.innerWidth >= 1024);
       if (headerStickyRef.current) {
         const rect = headerStickyRef.current.getBoundingClientRect();
         if (rect.height > 0) {
@@ -270,12 +463,29 @@ export default function CustomerStorePage() {
 
   useEffect(() => {
     setLogoFailed(false);
+    if (typeof document !== "undefined") {
+      const activeLogo = storeSettings.logoUrl?.trim() || "/logo.png";
+      const updateLink = (rel: string) => {
+        let el = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
+        if (!el) {
+          el = document.createElement("link");
+          el.rel = rel;
+          document.head.appendChild(el);
+        }
+        el.href = activeLogo;
+      };
+      try {
+        updateLink("icon");
+        updateLink("shortcut icon");
+        updateLink("apple-touch-icon");
+      } catch {}
+    }
   }, [storeSettings.logoUrl]);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
-  };
+  }, []);
 
   useEffect(() => {
     const loadStore = async () => {
@@ -295,7 +505,9 @@ export default function CustomerStorePage() {
               name: itemName,
               nameGu: raw.nameGu || raw.name_gu || itemName,
               nameEn: raw.nameEn || raw.name_en || "",
-              category: raw.category || "કઠોળ-અનાજ",
+              category: String(raw.category || raw.categoryName || raw.category_name || "Grains & Pulses").trim(),
+              categoryName: String(raw.categoryName || raw.category_name || raw.category || "Grains & Pulses").trim(),
+              category_name: String(raw.category_name || raw.categoryName || raw.category || "Grains & Pulses").trim(),
               units: parsedUnits,
               price: Number(raw.price) || 0,
               inStock: raw.inStock !== undefined ? raw.inStock : (raw.in_stock !== undefined ? raw.in_stock : true),
@@ -456,7 +668,7 @@ export default function CustomerStorePage() {
     return () => clearInterval(timer);
   }, [banners]);
 
-  const addToCart = (product: Product) => {
+  const addToCart = useCallback((product: Product) => {
     if (!product.inStock || product.stockCount <= 0) return;
     const key = product.id;
     if ((cart[key]?.quantity ?? 0) >= product.stockCount) {
@@ -481,7 +693,7 @@ export default function CustomerStorePage() {
     showToast(`${product.name || product.nameGu || product.nameEn || "Item"} added to your list.`);
     setBouncedProductId(product.id);
     window.setTimeout(() => setBouncedProductId((active) => active === product.id ? null : active), 500);
-  };
+  }, [cart, showToast]);
 
   const handleClearSearch = () => {
     setSearchQuery("");
@@ -511,19 +723,19 @@ export default function CustomerStorePage() {
     recognition.start();
   };
 
-  const toggleFavorite = (productId: string) => {
+  const toggleFavorite = useCallback((productId: string) => {
     setFavorites((current) => {
       const next = current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId];
       localStorage.setItem("jay-store-favorites", JSON.stringify(next));
       return next;
     });
-  };
+  }, []);
 
-  const shareProduct = (product: Product) => {
+  const shareProduct = useCallback((product: Product) => {
     const title = product.name || product.nameGu || product.nameEn || "Grocery Item";
     const message = `${title} — ₹${product.price}\n${window.location.origin}/?item=${encodeURIComponent(product.id)}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
-  };
+  }, []);
 
   const repeatLastOrder = () => {
     try {
@@ -587,7 +799,7 @@ export default function CustomerStorePage() {
     };
   }, []);
 
-  const updateQty = (key: string, delta: number) => {
+  const updateQty = useCallback((key: string, delta: number) => {
     if (delta > 0) {
       const existing = cart[key];
       const product = products.find((entry) => entry.id === key);
@@ -610,7 +822,7 @@ export default function CustomerStorePage() {
         [key]: { ...existing, quantity: newQty },
       };
     });
-  };
+  }, [cart, products, showToast]);
 
   const totalCartCount = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
   const cartTotal = Object.values(cart).reduce((sum, item) => sum + item.quantity * item.price, 0);
@@ -794,6 +1006,7 @@ export default function CustomerStorePage() {
     const element = receiptRef.current;
 
     try {
+      const html2canvas = (await import("html2canvas")).default;
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
@@ -856,45 +1069,55 @@ export default function CustomerStorePage() {
     }
   };
 
-  const handleShareReceipt = async () => {
+  const generateReceiptTextMessage = (): string => {
+    const storeTitle = storeSettings.storeName || "Jay Vachhraj General Store";
+    const storeAddress = storeSettings.address || "Zanzmer";
+    const dateTime =
+      receiptTimestamp ||
+      `${new Date().toLocaleDateString("en-IN")} · ${new Date().toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })}`;
+
+    let message = `🧾 *${storeTitle.toUpperCase()}*\n📍 ${storeAddress}\n🕒 ${dateTime}\n`;
+    message += `--------------------------------\n`;
+    if (custName.trim()) message += `👤 *Customer:* ${custName.trim()}\n`;
+    if (custPhone.trim()) message += `📱 *Mobile:* ${custPhone.replace(/\D/g, "")}\n`;
+    if (custAddress.trim()) message += `🏠 *Address:* ${custAddress.trim()}\n`;
+    message += `--------------------------------\n`;
+    message += `*ORDER ITEMS:*\n`;
+
+    Object.values(cart).forEach((item, index) => {
+      const product = products.find((p) => p.id === item.id);
+      const itemDisplayName = product ? (product.name || product.nameGu || product.nameEn || item.name) : item.name;
+      const unitLabel = product?.units?.[0] || item.unit || "";
+      const unitText = unitLabel ? ` (${unitLabel})` : "";
+      message += `${index + 1}. ${itemDisplayName}${unitText}\n   ${item.quantity} × ₹${item.price.toFixed(2)} = *₹${(item.price * item.quantity).toFixed(2)}*\n`;
+    });
+
+    message += `--------------------------------\n`;
+    if (cartDiscount > 0) {
+      message += `🎁 *Discount:* -₹${cartDiscount.toFixed(2)}\n`;
+    }
+    message += `💰 *TOTAL AMOUNT: ₹${cartTotal.toFixed(2)}*\n`;
+    message += `📦 *Total Items:* ${totalCartCount} items\n`;
+    message += `--------------------------------\n`;
+    message += `_Thank you for shopping with us!_`;
+
+    return message;
+  };
+
+  const handleShareReceipt = () => {
     try {
-      setIsSharingReceipt(true);
-      const blob = await generateReceiptImageBlob();
-      if (!blob) {
-        // silently fail if blob generation fails
-        return;
-      }
-
-      const fileName = `JVGS_Bill_${Date.now()}.png`;
-      const imageFile = new File([blob], fileName, { type: "image/png" });
-
-      // Direct native file share (mobile / PWA)
-      if (navigator.canShare && navigator.canShare({ files: [imageFile] })) {
-        try {
-          await navigator.share({
-            files: [imageFile],
-            title: "Jay Vachhraj General Store - Bill",
-          });
-        } catch (err) {
-          if (err instanceof Error && err.name === "AbortError") return; // user closed share sheet
-        }
-      } else {
-        // Fallback: download the image
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          if (document.body.contains(a)) document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 200);
+      const receiptMessage = generateReceiptTextMessage();
+      const whatsappUrl = `https://wa.me/919638009880?text=${encodeURIComponent(receiptMessage)}`;
+      const win = window.open(whatsappUrl, "_blank");
+      if (!win) {
+        window.location.href = whatsappUrl;
       }
     } catch (error) {
       console.error("Share failed:", error);
-    } finally {
-      setIsSharingReceipt(false);
     }
   };
 
@@ -914,15 +1137,88 @@ export default function CustomerStorePage() {
 
   const activeSearchQuery = searchQuery.trim() === "" ? "" : deferredSearchQuery;
   const brands = [...new Set(products.map((product) => product.brand).filter((brand) => brand && brand !== "Other"))];
-  const filteredProducts = products.filter((p) => {
-    const matchesCat = activeCategory === "all" || p.category === activeCategory;
-    const matchesBrand = brandFilter === "all" || p.brand === brandFilter;
-    const matchesSale = !saleOnly || p.offer || p.originalPrice > p.price;
-    const matchesFavorite = !favoritesOnly || favorites.includes(p.id);
-    const categoryName = storeSettings.categories.find((category) => category.id === p.category)?.name;
-    const matchesSearch = matchesGroceryQuery(p, activeSearchQuery, categoryName);
-    return matchesCat && matchesBrand && matchesSale && matchesFavorite && matchesSearch;
-  }).sort((first, second) => sortPrice === "low" ? first.price - second.price : sortPrice === "high" ? second.price - first.price : 0);
+  const selectedCategory = activeCategory;
+  const setSelectedCategory = setActiveCategory;
+
+  // Temporary development debug logging before the filter
+  console.log('Selected:', selectedCategory, 'Sample Item Category:', products[0]?.category);
+
+  const filteredProducts = useMemo(() => {
+    const isAllCategory =
+      !selectedCategory ||
+      normalize(selectedCategory) === "all" ||
+      normalize(selectedCategory) === "all items";
+
+    const allStoreCategories = storeSettings.categories.length
+      ? storeSettings.categories
+      : DEFAULT_CATEGORIES;
+
+    return products
+      .filter((p) => {
+        const norm = (str?: string) => (str || "").trim().toLowerCase();
+        const normActive = norm(selectedCategory || activeCategory);
+        const prodCat = norm(p.category || p.categoryName || p.category_name);
+
+        let matchesCat = 
+          normActive === "all" || 
+          normActive === "all items" || 
+          !normActive ||
+          prodCat === normActive ||
+          prodCat.replace(/\s+/g, "-") === normActive ||
+          normActive.replace(/\s+/g, "-") === prodCat;
+
+        // Cross-check against store settings categories (id <-> name)
+        if (!matchesCat) {
+          const matchedCategoryObj = allStoreCategories.find(
+            (cat) =>
+              norm(cat.id) === normActive ||
+              norm(cat.name) === normActive
+          );
+          if (matchedCategoryObj) {
+            matchesCat =
+              norm(matchedCategoryObj.name) === prodCat ||
+              norm(matchedCategoryObj.id) === prodCat ||
+              norm(matchedCategoryObj.name).replace(/\s+/g, "-") === prodCat ||
+              norm(matchedCategoryObj.id).replace(/\s+/g, "-") === prodCat;
+          }
+        }
+
+        // Fallback to Primary Store Category aliases and translations
+        if (!matchesCat) {
+          try {
+            const primaryItem = normalizeCategoryToPrimary(p.category, storeSettings.categories);
+            const primarySelected = normalizeCategoryToPrimary(selectedCategory || activeCategory, storeSettings.categories);
+            if (primaryItem.id && primarySelected.id && primaryItem.id === primarySelected.id) {
+              matchesCat = true;
+            }
+          } catch {}
+        }
+
+        const matchesBrand = brandFilter === "all" || p.brand === brandFilter;
+        const matchesSale = !saleOnly || p.offer || p.originalPrice > p.price;
+        const matchesFavorite = !favoritesOnly || favorites.includes(p.id);
+        const categoryName = storeSettings.categories.find((category) => category.id === p.category)?.name;
+        const matchesSearch = matchesGroceryQuery(p, activeSearchQuery, categoryName);
+        return matchesCat && matchesBrand && matchesSale && matchesFavorite && matchesSearch;
+      })
+      .sort((first, second) =>
+        sortPrice === "low"
+          ? first.price - second.price
+          : sortPrice === "high"
+          ? second.price - first.price
+          : 0
+      );
+  }, [
+    products,
+    selectedCategory,
+    brandFilter,
+    saleOnly,
+    favoritesOnly,
+    favorites,
+    storeSettings.categories,
+    activeSearchQuery,
+    sortPrice,
+  ]);
 
   const activeBanners = banners.filter((b) => b.active);
   const allCategories: StoreCategory[] = [{ id: "all", name: "All Items", icon: "Sparkles" }, ...(storeSettings.categories.length ? storeSettings.categories : DEFAULT_CATEGORIES)];
@@ -931,7 +1227,7 @@ export default function CustomerStorePage() {
 
   return (
     <div
-      className="text-slate-800 min-h-screen font-sans flex flex-col antialiased transition-colors duration-200 pb-28 sm:pb-20"
+      className="text-slate-800 min-h-screen font-sans flex flex-col antialiased transition-colors duration-200 pb-12 sm:pb-16"
       style={{ backgroundColor: storeSettings.backgroundColor || "#fbf9f5" }}
     >
       {toastMsg && (
@@ -1019,6 +1315,7 @@ export default function CustomerStorePage() {
                       src={storeSettings.logoUrl}
                       alt={storeSettings.storeName || "Store logo"}
                       onError={() => setLogoFailed(true)}
+                      decoding="async"
                       className="w-12 h-12 rounded-full object-cover shadow-xs border border-[#E2E8F0] pointer-events-none"
                     />
                   ) : (
@@ -1043,18 +1340,38 @@ export default function CustomerStorePage() {
               </div>
 
               {/* 3. Status & Timings (End / Right Aligned Compact Vertical Column) */}
-              <div className="shrink-0 flex flex-col items-end justify-center">
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                  storeIsOpen
-                    ? "bg-[#E8F5E9] text-emerald-800 border border-emerald-200"
-                    : "bg-[#FFEBEE] text-rose-800 border border-rose-200"
-                }`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${storeIsOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
-                  {storeIsOpen ? "Open" : "Closed"}
-                </span>
-                <span className="text-[9.5px] text-[#64748B] font-medium tracking-tight mt-0.5 text-right whitespace-nowrap">
-                  {openTime12} - {closeTime12}
-                </span>
+              <div className="shrink-0 flex items-center gap-3">
+                <div className="flex flex-col items-end justify-center">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                    storeIsOpen
+                      ? "bg-[#E8F5E9] text-emerald-800 border border-emerald-200"
+                      : "bg-[#FFEBEE] text-rose-800 border border-rose-200"
+                  }`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${storeIsOpen ? "bg-emerald-500" : "bg-rose-500"}`} />
+                    {storeIsOpen ? "Open" : "Closed"}
+                  </span>
+                  <span className="text-[9.5px] text-[#64748B] font-medium tracking-tight mt-0.5 text-right whitespace-nowrap">
+                    {openTime12} - {closeTime12}
+                  </span>
+                </div>
+
+                {/* Desktop Header Cart Action */}
+                <button
+                  type="button"
+                  onClick={() => setCartOpen(true)}
+                  aria-label="Open Cart"
+                  className="hidden lg:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-500 hover:bg-orange-600 active:scale-95 text-white font-bold text-xs shadow-xs transition"
+                >
+                  <div className="relative flex items-center">
+                    <ShoppingBag size={15} />
+                    {totalCartCount > 0 && (
+                      <span className="absolute -top-1.5 -right-2 bg-slate-900 text-white font-extrabold text-[9px] min-w-3.5 h-3.5 px-0.5 rounded-full flex items-center justify-center">
+                        {totalCartCount}
+                      </span>
+                    )}
+                  </div>
+                  <span>Cart{totalCartCount > 0 ? ` (₹${cartTotal.toFixed(0)})` : ""}</span>
+                </button>
               </div>
             </div>
 
@@ -1141,7 +1458,7 @@ export default function CustomerStorePage() {
             {speechError && <p role="status" className="mt-1 text-[11px] text-rose-600 text-center">{speechError}</p>}
 
             {/* Quick Filters Pill Bar */}
-            <div className="mt-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar text-xs">
+            <div className={`mt-2.5 flex items-center gap-2 no-scrollbar text-xs ${isSortOpen ? "overflow-visible" : "overflow-x-auto"}`}>
               <button
                 type="button"
                 onClick={() => setSaleOnly((v) => !v)}
@@ -1180,120 +1497,183 @@ export default function CustomerStorePage() {
                   </select>
                 </div>
               )}
-              <div className="relative inline-flex items-center shrink-0">
-                <SlidersHorizontal size={13} className="absolute left-2.5 pointer-events-none text-slate-500" />
-                <select
-                  aria-label="Sort by price"
-                  value={sortPrice}
-                  onChange={(e) => setSortPrice(e.target.value)}
-                  className="rounded-full border border-stone-200 bg-[#fbf9f5] pl-7 pr-3 py-1.5 text-[11px] text-slate-700 focus:outline-none focus:border-orange-500 shrink-0 cursor-pointer shadow-2xs hover:bg-stone-100 transition"
+              <div ref={sortDropdownRef} className="relative inline-flex items-center shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsSortOpen((prev) => !prev)}
+                  aria-haspopup="listbox"
+                  aria-expanded={isSortOpen}
+                  aria-label="Sort products"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-[#fbf9f5] text-slate-600 px-3 py-1 text-[11px] font-bold hover:bg-stone-100 transition cursor-pointer shrink-0 shadow-2xs focus:outline-none focus:border-orange-500"
                 >
-                  <option value="featured">Featured Order</option>
-                  <option value="low">Price: Low to High</option>
-                  <option value="high">Price: High to Low</option>
-                </select>
+                  <span>{SORT_OPTIONS.find((opt) => opt.value === sortPrice)?.label || "Featured Order"}</span>
+                  <ChevronDown
+                    size={14}
+                    className={`text-slate-500 transition-transform duration-200 ${isSortOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                {isSortOpen && (
+                  <div
+                    role="listbox"
+                    aria-label="Sort options"
+                    className="absolute top-full left-0 mt-1 w-40 bg-white border border-stone-200 rounded-xl shadow-lg z-50 overflow-hidden py-1"
+                  >
+                    {SORT_OPTIONS.map((option) => {
+                      const isSelected = sortPrice === option.value;
+                      return (
+                        <div
+                          key={option.value}
+                          role="option"
+                          aria-selected={isSelected}
+                          onClick={() => {
+                            setSortPrice(option.value);
+                            setIsSortOpen(false);
+                          }}
+                          className={`flex items-center justify-between px-4 py-2 text-[11px] cursor-pointer transition-colors ${
+                            isSelected
+                              ? "bg-orange-50 font-bold text-orange-600"
+                              : "text-slate-700 hover:bg-stone-100"
+                          }`}
+                        >
+                          <span>{option.label}</span>
+                          {isSelected && <Check size={13} className="text-orange-600 shrink-0" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </header>
       </div>
 
-      <main className="max-w-6xl mx-auto px-4 py-4 w-full flex-1 pb-12 sm:pb-16">
-        {/* Active Promotional Banners Hero Slider: Constrained to max-h-52 mobile / max-h-72 desktop */}
+      <main className="max-w-6xl mx-auto px-4 pt-0 pb-4 md:py-4 w-full flex-1 pb-20 sm:pb-24 lg:grid lg:grid-cols-[250px_1fr] lg:gap-6 items-start lg:items-start">
+        {/* Active Promotional Banners Hero Slider */}
         {activeBanners.length > 0 && (
-          <div className="mt-4 sm:mt-6 mb-6 relative rounded-3xl overflow-hidden shadow-xs border border-stone-200/80 bg-white">
-            <div className="relative w-full h-44 sm:h-64 max-h-52 sm:max-h-72 overflow-hidden rounded-3xl">
+          <div
+            className="w-full my-2.5 px-3 md:my-6 md:px-0 flex justify-center items-center lg:col-span-2"
+          >
+            <div
+              className="relative w-full max-w-full mx-auto overflow-hidden rounded-2xl flex items-center justify-center shadow-xs border border-stone-200/80 bg-white"
+              style={{ aspectRatio: "1460 / 545" }}
+            >
               {activeBanners.map((b, idx) => (
                 <div
                   key={b.id}
                   className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${
                     idx === activeSliderIndex ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
                   }`}
+                  style={{ borderRadius: "1rem", overflow: "hidden" }}
                 >
                   <img
                     src={b.imgUrl}
-                    alt={b.title}
-                    className="w-full h-full object-cover"
+                    alt={b.title || "Promotional Banner"}
+                    decoding="async"
+                    className="w-full h-full object-fill block"
+                    style={{ aspectRatio: "1460 / 545" }}
                   />
-                  <div className="absolute inset-0 p-4 sm:p-6 flex flex-col justify-end bg-gradient-to-t from-black/70 via-black/20 to-transparent">
-                    <span className="inline-block px-2.5 py-0.5 rounded-full bg-orange-500 text-white font-bold text-[10px] w-fit mb-1 shadow-xs">
-                      {b.tag}
-                    </span>
-                    <h2 className="text-white font-black text-sm sm:text-base md:text-lg leading-tight drop-shadow-md">
-                      {b.title}
-                    </h2>
-                    <p className="text-amber-200 text-xs sm:text-sm font-semibold mt-0.5 truncate">
-                      {b.desc}
-                    </p>
-                  </div>
+                  {(b.title?.trim() || b.desc?.trim() || b.tag?.trim()) && (
+                    <div className="absolute inset-0 p-3 sm:p-6 flex flex-col justify-end bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none">
+                      {b.tag?.trim() && (
+                        <span className="inline-block px-2.5 py-0.5 rounded-full bg-orange-500 text-white font-bold text-[10px] w-fit mb-1 shadow-xs">
+                          {b.tag}
+                        </span>
+                      )}
+                      {b.title?.trim() && (
+                        <h2 className="text-white font-black text-xs sm:text-base md:text-lg leading-tight drop-shadow-md">
+                          {b.title}
+                        </h2>
+                      )}
+                      {b.desc?.trim() && (
+                        <p className="text-amber-200 text-[11px] sm:text-sm font-semibold mt-0.5 truncate">
+                          {b.desc}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
-            </div>
 
-            {activeBanners.length > 1 && (
-              <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20">
-                {activeBanners.map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSliderIndex(idx)}
-                    aria-label={`Go to slide ${idx + 1}`}
-                    className={`h-1.5 rounded-full transition-all ${
-                      idx === activeSliderIndex ? "w-5 bg-orange-500" : "w-1.5 bg-white/70"
-                    }`}
-                  />
-                ))}
-              </div>
-            )}
+              {activeBanners.length > 1 && (
+                <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20">
+                  {activeBanners.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setSliderIndex(idx)}
+                      aria-label={`Go to slide ${idx + 1}`}
+                      className={`h-1.5 rounded-full transition-all ${
+                        idx === activeSliderIndex ? "w-5 bg-orange-500" : "w-1.5 bg-white/70"
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {bannersLoading && (
-          <div role="status" aria-label="Loading promotions" className="mt-4 sm:mt-6 mb-6 overflow-hidden rounded-3xl border border-stone-200 bg-white">
-            <div className="skeleton-shimmer h-44 sm:h-64 max-h-52 sm:max-h-72" />
+          <div
+            role="status"
+            aria-label="Loading promotions"
+            className="w-full my-2.5 px-3 md:my-6 md:px-0 flex justify-center items-center lg:col-span-2"
+          >
+            <div
+              className="skeleton-shimmer w-full max-w-full mx-auto overflow-hidden rounded-2xl relative block border border-stone-200"
+              style={{ aspectRatio: "1460 / 545" }}
+            />
           </div>
         )}
 
         {/* Sticky Category Bar Wrapper: Docks below header controls on scroll */}
         <div
           id="categories-section"
-          style={headerHeight ? { top: `${headerHeight}px` } : undefined}
-          className="sticky top-[105px] sm:top-[115px] z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm py-2.5 transition-all mt-4 sm:mt-6 mb-6 -mx-4 px-4 sm:-mx-6 sm:px-6"
+          style={headerHeight && !isDesktop ? { top: `${headerHeight}px` } : undefined}
+          className="sticky top-[105px] sm:top-[115px] z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm py-2.5 transition-all mt-0 md:mt-6 mb-6 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:transition-none lg:flex lg:flex-col lg:overflow-y-auto lg:max-h-[calc(100vh-230px)] lg:sticky lg:top-[210px] lg:!top-[210px] lg:z-30 lg:h-fit lg:self-start lg:[&::-webkit-scrollbar]:hidden no-scrollbar lg:-mx-0 lg:px-0 lg:py-0 lg:bg-transparent lg:border-none lg:shadow-none lg:mt-0 lg:mb-0"
         >
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-              <FolderOpen size={15} className="text-orange-500" /> Categories
+              <FolderOpen size={15} className="text-orange-500" /> CATEGORIES
             </span>
             <span className="text-xs text-slate-500 font-semibold">
-              {filteredProducts.length} items
+              ({filteredProducts.length} {filteredProducts.length === 1 ? "item" : "items"})
             </span>
           </div>
-          <div className="flex items-start gap-3 sm:gap-4 overflow-x-auto pb-1.5 pt-0.5 no-scrollbar scroll-smooth">
+          <div className="flex items-start gap-3 sm:gap-4 overflow-x-auto pb-1.5 pt-0.5 no-scrollbar scroll-smooth lg:flex-col lg:overflow-x-visible lg:gap-2 lg:pb-0 lg:pt-0 lg:w-full">
             {allCategories.map((cat) => {
-              const isSel = activeCategory === cat.id;
+              const isSel =
+                normalize(selectedCategory) === normalize(cat.id) ||
+                normalize(selectedCategory) === normalize(cat.name) ||
+                (cat.id === "all" &&
+                  (normalize(selectedCategory) === "all" ||
+                    normalize(selectedCategory) === "all items" ||
+                    !selectedCategory));
               const CategoryIcon = CATEGORY_ICONS[cat.icon] ?? Sparkles;
               return (
                 <button
                   key={cat.id}
                   type="button"
                   onClick={() => {
-                    setActiveCategory(cat.id);
+                    setActiveCategory(cat.id === "all" ? "all" : (cat.name || cat.id));
                     setFavoritesOnly(false);
                   }}
                   style={isSel ? { backgroundColor: storeSettings.primaryColor || '#ea580c', borderColor: storeSettings.primaryColor || '#ea580c' } : undefined}
-                  className={`rounded-2xl shadow-sm p-2 flex flex-col items-center justify-center shrink-0 min-w-20 sm:min-w-24 transition duration-150 active:scale-95 border ${
+                  className={`rounded-2xl shadow-sm p-2 flex flex-col items-center justify-center shrink-0 min-w-20 sm:min-w-24 transition duration-150 active:scale-95 border lg:w-full lg:justify-start lg:flex-row lg:gap-3 lg:p-3 lg:min-w-0 ${
                     isSel
                       ? "text-white ring-2 ring-black/10"
                       : "bg-slate-50 border border-slate-200 text-slate-700 hover:border-orange-200 hover:bg-orange-50/40"
                   }`}
                 >
                   <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition ${
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition shrink-0 lg:mb-0 ${
                       isSel ? "bg-white/20 text-white" : "bg-white text-orange-600 border border-slate-100 shadow-2xs"
                     }`}
                   >
                     <CategoryIcon size={20} aria-hidden="true" />
                   </div>
-                  <span className="text-[11px] font-bold text-center whitespace-nowrap truncate max-w-[72px]">
+                  <span className="text-[11px] font-bold text-center whitespace-nowrap truncate max-w-[72px] lg:text-xs lg:font-bold lg:text-left lg:max-w-none lg:truncate lg:flex-1">
                     {cat.name}
                   </span>
                 </button>
@@ -1302,227 +1682,110 @@ export default function CustomerStorePage() {
           </div>
         </div>
 
-        {/* Hero Banner: rounded-3xl bg-gradient-to-r from-amber-50 to-orange-100 border border-orange-200 p-6 shadow-sm */}
-        <section className="mt-4 sm:mt-6 mb-6 rounded-3xl bg-gradient-to-r from-amber-50 to-orange-100 border border-orange-200 p-6 shadow-sm relative overflow-hidden flex flex-col justify-center">
-          <div className="relative z-10 max-w-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500 text-white text-[11px] font-black uppercase tracking-wider shadow-xs">
-                <Sparkles size={12} /> {storeSettings.heroBadge}
-              </span>
-              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
-                {storeSettings.heroSubBadge}
-              </span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 leading-snug">
-              {storeSettings.heroTitle}
-            </h2>
-            <p className="text-sm sm:text-base text-slate-700 mt-1.5 line-clamp-2 leading-relaxed">
-              {storeSettings.heroSubtitle}
-            </p>
-            <div className="mt-4 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCategory("તેલ-ઘી");
-                  setFavoritesOnly(false);
-                }}
-                className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-xs font-bold shadow-xs transition"
-              >
-                {storeSettings.heroBtn1Text}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveCategory("મસાલા");
-                  setFavoritesOnly(false);
-                }}
-                className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 border border-orange-200 text-amber-950 text-xs font-bold shadow-2xs transition"
-              >
-                {storeSettings.heroBtn2Text}
-              </button>
-            </div>
-          </div>
-          <div className="absolute -right-6 -bottom-6 w-40 h-40 sm:w-56 sm:h-56 bg-gradient-to-tr from-amber-300/40 to-orange-400/20 rounded-full blur-2xl pointer-events-none" />
-        </section>
-
-        {lastOrderAvailable && (
-          <div className="mb-5 flex justify-end">
-            <button
-              onClick={repeatLastOrder}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
-            >
-              Repeat last order
-            </button>
-          </div>
-        )}
-
-
-
-        {/* Product Grid: grid grid-cols-2 md:grid-cols-4 gap-4 p-4 */}
-        {loading ? (
-          <div role="status" aria-label="Loading products" className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
-            {Array.from({ length: 8 }, (_, index) => (
-              <div key={index} className="overflow-hidden rounded-2xl border border-orange-100 bg-white flex flex-col">
-                <div className="skeleton-shimmer aspect-square" />
-                <div className="p-2.5 sm:p-3 space-y-2 flex flex-col items-center w-full">
-                  <div className="skeleton-shimmer h-4 w-3/4 rounded" />
-                  <div className="skeleton-shimmer h-3.5 w-1/2 rounded" />
-                  <div className="skeleton-shimmer h-8 w-full rounded-xl mt-0.5" />
-                </div>
+        {/* Desktop Right Column: Hero Banner, Repeat Order, and Products */}
+        <div className="min-w-0 flex-1 flex flex-col">
+          {/* Hero Banner: rounded-3xl bg-gradient-to-r from-amber-50 to-orange-100 border border-orange-200 p-6 shadow-sm */}
+          <section className="mt-4 sm:mt-6 mb-6 rounded-3xl bg-gradient-to-r from-amber-50 to-orange-100 border border-orange-200 p-6 shadow-sm relative overflow-hidden flex flex-col justify-center">
+            <div className="relative z-10 max-w-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500 text-white text-[11px] font-black uppercase tracking-wider shadow-xs">
+                  <Sparkles size={12} /> {storeSettings.heroBadge}
+                </span>
+                <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
+                  {storeSettings.heroSubBadge}
+                </span>
               </div>
-            ))}
-          </div>
-        ) : (
-          filteredProducts.length ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
-              {filteredProducts.map((item) => {
-                const isAvailable = item.inStock && item.stockCount > 0;
-                const isFavorite = favorites.includes(item.id);
-                const inCartQty = cart[item.id]?.quantity ?? 0;
-                const unitChip = item.units && item.units.length > 0 ? item.units[0] : "1 kg";
-
-                return (
-                  <div
-                    key={item.id}
-                    className="bg-white border border-orange-100 rounded-2xl overflow-hidden flex flex-col hover:shadow-md hover:border-orange-200 transition-all duration-200 shadow-xs relative group"
-                  >
-                    <div className="relative w-full aspect-square overflow-hidden rounded-t-2xl">
-                      <img
-                        src={item.photoUrl}
-                        alt={item.name || item.nameGu || item.nameEn || "Grocery Item"}
-                        loading="lazy"
-                        className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
-                          !isAvailable ? "grayscale opacity-50" : ""
-                        }`}
-                      />
-
-                      {/* Animated 'SPECIAL OFFER' Corner Badge - Absolutely flush to top-left corner with high-glow shimmer */}
-                      {isAvailable && (item.offer || item.originalPrice > item.price) && (
-                        <div className="absolute top-0 left-0 z-10 m-0 px-2 sm:px-2.5 py-0.5 text-[8.5px] sm:text-[9.5px] font-bold tracking-wider text-white bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 rounded-tl-2xl rounded-br-lg shadow-sm flex items-center gap-1 select-none pointer-events-none special-offer-badge overflow-hidden">
-                          <span className="special-offer-shimmer" />
-                          <span className="sparkle-icon text-amber-200 text-[8px] leading-none shrink-0 relative z-10">✦</span>
-                          <span className="uppercase whitespace-nowrap relative z-10">SPECIAL OFFER</span>
-                          <span className="sparkle-icon-delayed text-amber-200 text-[8px] leading-none shrink-0 relative z-10">✦</span>
-                        </div>
-                      )}
-
-                      {!isAvailable && (
-                        <span className="absolute bottom-2 left-2 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow z-10 select-none">
-                          Out of stock
-                        </span>
-                      )}
-
-                      {/* Favorite Heart & WhatsApp Share Action Icons - Vertical layout to avoid overlap with badge */}
-                      <div className="absolute top-2 right-2 z-10 flex flex-col gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => toggleFavorite(item.id)}
-                          aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-                          aria-pressed={isFavorite}
-                          className={`w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full bg-white/95 backdrop-blur-xs flex items-center justify-center shadow-xs border border-slate-200/80 hover:bg-white transition active:scale-90 ${
-                            isFavorite ? "text-rose-500" : "text-slate-400 hover:text-rose-500"
-                          }`}
-                        >
-                          <Heart size={13} fill={isFavorite ? "currentColor" : "none"} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => shareProduct(item)}
-                          aria-label="Share product on WhatsApp"
-                          className="w-7 h-7 sm:w-7.5 sm:h-7.5 rounded-full bg-white/95 backdrop-blur-xs flex items-center justify-center shadow-xs border border-slate-200/80 hover:bg-white text-[#25D366] transition active:scale-90"
-                        >
-                          <Share2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Compact Card Content - Centered & Reduced Vertical Gap */}
-                    <div className="p-2.5 sm:p-3 flex-1 flex flex-col items-center text-center justify-between gap-1.5 sm:gap-2">
-                      <div className="w-full">
-                        {/* Centered Product Title */}
-                        <h3 className="font-bold text-slate-900 text-xs sm:text-sm line-clamp-2 leading-snug">
-                          {item.name || item.nameGu || item.nameEn}
-                        </h3>
-
-                        {/* Centered Pricing Row: ₹120 / ₹150 / 500g */}
-                        <div className="mt-1 flex items-center justify-center flex-wrap gap-1.5">
-                          <span className="font-extrabold text-sm sm:text-base" style={{ color: storeSettings.primaryColor || '#ea580c' }}>
-                            ₹{item.price}
-                          </span>
-                          {item.originalPrice > item.price && (
-                            <del className="text-[11px] sm:text-xs text-slate-400 font-normal line-through">
-                              ₹{item.originalPrice}
-                            </del>
-                          )}
-                          <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-medium border border-slate-200/70">
-                            {unitChip}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Smooth Counter State (- 1 +) or Solid Brand + Add to List Button */}
-                      <div className="w-full pt-0.5">
-                        {inCartQty > 0 ? (
-                          <div className="flex items-center justify-between w-full rounded-xl bg-orange-50 border border-orange-200 p-0.5 sm:p-1">
-                            <button
-                              type="button"
-                              onClick={() => updateQty(item.id, -1)}
-                              aria-label="Decrease quantity"
-                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white text-orange-600 font-bold flex items-center justify-center hover:bg-orange-100 active:scale-95 transition shadow-2xs border border-orange-200"
-                            >
-                              <Minus size={13} />
-                            </button>
-                            <span className="font-extrabold text-[11px] sm:text-xs text-orange-950 px-1 sm:px-2">
-                              {inCartQty} in cart
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => updateQty(item.id, 1)}
-                              aria-label="Increase quantity"
-                              style={{ backgroundColor: storeSettings.primaryColor || '#ea580c' }}
-                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-white font-bold flex items-center justify-center hover:opacity-90 active:scale-95 transition shadow-2xs"
-                            >
-                              <Plus size={13} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => addToCart(item)}
-                            disabled={!isAvailable}
-                            style={isAvailable ? { backgroundColor: storeSettings.primaryColor || '#ea580c' } : undefined}
-                            className={`w-full py-2 sm:py-2.5 px-3 rounded-xl font-bold text-xs transition duration-150 active:scale-95 flex items-center justify-center gap-1 shadow-xs ${
-                              bouncedProductId === item.id ? "cart-add-bounce" : ""
-                            } ${
-                              isAvailable
-                                ? "hover:opacity-95 text-white active:scale-95 shadow-sm"
-                                : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
-                            }`}
-                          >
-                            {isAvailable ? "+ Add to List" : "Out of stock"}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500 flex flex-col items-center justify-center gap-3">
-              <p>No matching products. Try another search or filter.</p>
-              {searchQuery.trim().length > 0 && (
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 leading-snug">
+                {storeSettings.heroTitle}
+              </h2>
+              <p className="text-sm sm:text-base text-slate-700 mt-1.5 line-clamp-2 leading-relaxed">
+                {storeSettings.heroSubtitle}
+              </p>
+              <div className="mt-4 flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={handleClearSearch}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-xs font-semibold hover:bg-orange-100 transition shadow-2xs"
+                  onClick={() => {
+                    setActiveCategory("Oil & Ghee");
+                    setFavoritesOnly(false);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-xs font-bold shadow-xs transition"
                 >
-                  <X size={14} /> Clear Search
+                  {storeSettings.heroBtn1Text}
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveCategory("Spices");
+                    setFavoritesOnly(false);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 border border-orange-200 text-amber-950 text-xs font-bold shadow-2xs transition"
+                >
+                  {storeSettings.heroBtn2Text}
+                </button>
+              </div>
             </div>
-          )
-        )}
+            <div className="absolute -right-6 -bottom-6 w-40 h-40 sm:w-56 sm:h-56 bg-gradient-to-tr from-amber-300/40 to-orange-400/20 rounded-full blur-2xl pointer-events-none" />
+          </section>
+
+          {lastOrderAvailable && (
+            <div className="mb-5 flex justify-end">
+              <button
+                onClick={repeatLastOrder}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800 shadow-xs hover:bg-emerald-100 transition"
+              >
+                Repeat last order
+              </button>
+            </div>
+          )}
+
+          {/* Product Grid: grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 */}
+          {loading ? (
+            <div role="status" aria-label="Loading products" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 p-4 pb-12 lg:pb-24">
+              {Array.from({ length: 8 }, (_, index) => (
+                <div key={index} className="overflow-hidden rounded-2xl border border-orange-100 bg-white flex flex-col">
+                  <div className="skeleton-shimmer aspect-square" />
+                  <div className="p-2.5 sm:p-3 space-y-2 flex flex-col items-center w-full">
+                    <div className="skeleton-shimmer h-4 w-3/4 rounded" />
+                    <div className="skeleton-shimmer h-3.5 w-1/2 rounded" />
+                    <div className="skeleton-shimmer h-8 w-full rounded-xl mt-0.5" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            filteredProducts.length ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 p-4 pb-12 lg:pb-24">
+                {filteredProducts.map((item) => (
+                  <ProductCard
+                    key={item.id}
+                    item={item}
+                    isFavorite={favorites.includes(item.id)}
+                    inCartQty={cart[item.id]?.quantity ?? 0}
+                    isBounced={bouncedProductId === item.id}
+                    primaryColor={storeSettings.primaryColor}
+                    onToggleFavorite={toggleFavorite}
+                    onShareProduct={shareProduct}
+                    onAddToCart={addToCart}
+                    onUpdateQty={updateQty}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500 flex flex-col items-center justify-center gap-3">
+                <p>No matching products. Try another search or filter.</p>
+                {searchQuery.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-xs font-semibold hover:bg-orange-100 transition shadow-2xs"
+                  >
+                    <X size={14} /> Clear Search
+                  </button>
+                )}
+              </div>
+            )
+          )}
+        </div>
       </main>
 
       {/* Footer - Clean Light */}
@@ -1535,7 +1798,7 @@ export default function CustomerStorePage() {
                 style={{ background: `linear-gradient(135deg, ${storeSettings.primaryColor || '#ea580c'}, ${storeSettings.secondaryColor || '#f59e0b'})` }}
               >
                 {storeSettings.logoMode === "image" && storeSettings.logoUrl ? (
-                  <img src={storeSettings.logoUrl} alt="" className="h-full w-full rounded-2xl object-cover" />
+                  <img src={storeSettings.logoUrl} alt="" decoding="async" className="h-full w-full rounded-2xl object-cover" />
                 ) : (
                   <StoreLogoIcon size={22} />
                 )}
@@ -1614,7 +1877,12 @@ export default function CustomerStorePage() {
           </section>
         </div>
         <div className="border-t border-slate-200 px-4 py-4 text-center text-xs sm:text-sm text-slate-500 font-medium select-none">
-          <span>&copy; {new Date().getFullYear()} {storeSettings.storeName || "Jay Vachhraj General Store"}. All rights reserved. • <span aria-live="polite">{(viewCount || 0).toLocaleString()} visits</span></span>
+          <span>
+            &copy; {new Date().getFullYear()} {storeSettings.storeName || "Jay Vachhraj General Store"}. All rights reserved. •{" "}
+            <span aria-live="polite" className="inline">
+              {(viewCount || 0).toLocaleString()} visits
+            </span>
+          </span>
         </div>
       </footer>
 
@@ -1840,7 +2108,7 @@ export default function CustomerStorePage() {
       {isPromoOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <section role="dialog" aria-modal="true" aria-labelledby="promo-title" className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-amber-300 bg-white shadow-2xl">
-            {storeSettings.promoImageUrl && <img src={storeSettings.promoImageUrl} alt="" className="h-48 w-full object-cover" />}
+            {storeSettings.promoImageUrl && <img src={storeSettings.promoImageUrl} alt="" decoding="async" className="aspect-[16/9] w-full object-cover" />}
             <button onClick={() => { setPromoOpen(false); sessionStorage.setItem("jay-store-promo-dismissed", "true"); }} aria-label="Close offer" className="absolute right-3 top-3 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"><X size={18} /></button>
             <div className="p-6">
               <p className="mb-2 text-xs font-black uppercase tracking-widest text-orange-600">Special offer</p>
@@ -1862,7 +2130,7 @@ export default function CustomerStorePage() {
 
       {/* Floating Bottom Cart Capsule when items in cart */}
       {totalCartCount > 0 && (
-        <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto z-30">
+        <div className="fixed bottom-6 left-4 right-4 max-w-md mx-auto z-30">
           <div className="bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 text-white rounded-2xl p-2.5 shadow-xl flex items-center justify-between border border-amber-300/40">
             <div className="flex items-center gap-2.5 pl-1">
               <div className="cart-heartbeat w-9 h-9 rounded-xl bg-black/20 flex items-center justify-center text-lg font-bold text-amber-200">
@@ -1894,7 +2162,7 @@ export default function CustomerStorePage() {
         <aside
           role="region"
           aria-label="PWA App Install"
-          className={`fixed ${totalCartCount > 0 ? "bottom-36" : "bottom-20"} left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md glass-dock rounded-2xl px-4 py-2.5 shadow-xl border border-orange-200/90 flex items-center justify-between gap-3 transition-all duration-300 animate-in fade-in slide-in-from-bottom`}
+          className={`fixed ${totalCartCount > 0 ? "bottom-24" : "bottom-6"} left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md glass-dock rounded-2xl px-4 py-2.5 shadow-xl border border-orange-200/90 flex items-center justify-between gap-3 transition-all duration-300 animate-in fade-in slide-in-from-bottom`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="text-xl shrink-0" aria-hidden="true">📲</span>
@@ -1922,74 +2190,6 @@ export default function CustomerStorePage() {
           </div>
         </aside>
       )}
-
-      <nav
-        aria-label="Bottom Navigation Dock"
-        className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md glass-dock rounded-2xl px-3 py-2 shadow-lg border border-orange-100/70"
-      >
-        <div className="flex items-center justify-around">
-          <button
-            type="button"
-            onClick={() => {
-              window.scrollTo({ top: 0, behavior: "smooth" });
-              setActiveCategory("all");
-              setFavoritesOnly(false);
-            }}
-            className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition ${
-              activeCategory === "all" && !favoritesOnly ? "text-orange-600 font-bold" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <Home size={19} />
-            <span className="text-[10px]">Home</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              const el = document.getElementById("categories-section");
-              if (el) el.scrollIntoView({ behavior: "smooth" });
-            }}
-            className="flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition"
-          >
-            <FolderOpen size={19} />
-            <span className="text-[10px]">Categories</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCartOpen(true)}
-            className="relative flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition"
-          >
-            <div className="relative">
-              <ShoppingBag size={19} className={totalCartCount > 0 ? "text-orange-600" : ""} />
-              {totalCartCount > 0 && (
-                <span className="absolute -top-1.5 -right-2.5 bg-orange-600 text-white font-extrabold text-[10px] min-w-4 h-4 px-1 rounded-full flex items-center justify-center shadow-xs">
-                  {totalCartCount}
-                </span>
-              )}
-            </div>
-            <span className={`text-[10px] ${totalCartCount > 0 ? "font-bold text-orange-600" : ""}`}>Cart</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFavoritesOnly((prev) => !prev)}
-            className={`relative flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition ${
-              favoritesOnly ? "text-rose-600 font-bold" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <div className="relative">
-              <Heart size={19} fill={favoritesOnly ? "currentColor" : "none"} />
-              {favorites.length > 0 && !favoritesOnly && (
-                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500" />
-              )}
-            </div>
-            <span className="text-[10px]">Favorites</span>
-          </button>
-
-
-        </div>
-      </nav>
 
       {/* Cart Modal - Clean Light */}
       {isCartOpen && (

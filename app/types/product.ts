@@ -6,6 +6,8 @@ export interface Product {
   nameEn?: string;
   name_en?: string;
   category: string;
+  categoryName?: string;
+  category_name?: string;
   units: string[];
   price: number;
   inStock: boolean;

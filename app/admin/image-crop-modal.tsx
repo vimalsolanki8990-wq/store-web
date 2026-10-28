@@ -197,6 +197,10 @@ export function ImageCropModal({
 
   // Determine container styling based on aspect ratio
   const isWidescreen = aspectRatio > 1.2;
+  const is1460x545 = Math.abs(aspectRatio - 1460 / 545) < 0.01;
+  const isUltraWide = aspectRatio > 2.1 && !is1460x545;
+  const is871x418 = Math.abs(aspectRatio - 871 / 418) < 0.01;
+  const isTwoToOne = Math.abs(aspectRatio - 2) < 0.05 && !is871x418 && !is1460x545;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-3 backdrop-blur-md sm:p-5">
@@ -222,7 +226,17 @@ export function ImageCropModal({
             <div>
               <h3 className="text-sm font-black text-white">{title}</h3>
               <p className="text-[10px] text-slate-400">
-                {isWidescreen ? "16:9 Banner container ratio" : "1:1 Square container ratio"} · Drag to reposition
+                {is1460x545
+                  ? "1460 x 545 Banner container ratio"
+                  : is871x418
+                  ? "871x418 Banner container ratio"
+                  : isTwoToOne
+                    ? "2:1 Banner container ratio"
+                    : isUltraWide
+                      ? "21:9 Banner container ratio"
+                      : isWidescreen
+                        ? "16:9 Banner container ratio"
+                        : "1:1 Square container ratio"} · Drag to reposition
               </p>
             </div>
           </div>
@@ -241,9 +255,10 @@ export function ImageCropModal({
             ref={containerRef}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
+            style={isWidescreen ? { aspectRatio: `${aspectRatio}` } : undefined}
             className={`relative overflow-hidden rounded-2xl border-2 border-orange-500/80 shadow-2xl shadow-orange-950/40 cursor-grab active:cursor-grabbing bg-black/50 ${
               isWidescreen
-                ? "w-full max-w-[380px] sm:max-w-[420px] aspect-video"
+                ? "w-full max-w-[420px] sm:max-w-[460px]"
                 : "w-56 h-56 sm:w-64 sm:h-64 aspect-square"
             }`}
           >
@@ -262,7 +277,7 @@ export function ImageCropModal({
 
             {/* Corner Alignment Badges */}
             <div className="pointer-events-none absolute top-2 left-2 z-10 rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-mono text-orange-300 backdrop-blur-xs">
-              {isWidescreen ? "16:9 Banner" : "1:1 Product"}
+              {is1460x545 ? "1460 x 545 Banner" : is871x418 ? "871x418 Banner" : isTwoToOne ? "2:1 Banner" : isUltraWide ? "21:9 Banner" : isWidescreen ? "16:9 Banner" : "1:1 Product"}
             </div>
 
             {/* The Image inside container */}

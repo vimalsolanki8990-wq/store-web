@@ -218,3 +218,31 @@ body {
 .animate-shake {
   animation: shake 0.4s ease-in-out;
 }
+
+/* Mobile Hero Banner / Carousel Ratio Enforcement & Zero Cropping */
+.hero-banner-aspect {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1460 / 545;
+}
+
+@media (min-width: 640px) {
+  .hero-banner-aspect {
+    aspect-ratio: 16 / 9;
+  }
+}
+
+.hero-banner-img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1460 / 545;
+  object-fit: fill;
+  object-position: center;
+}
+
+@media (min-width: 640px) {
+  .hero-banner-img {
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+  }
+}
